@@ -1,0 +1,19 @@
+# Local development against an installed PostgreSQL.
+# 1. createdb vms   (or: CREATE DATABASE vms; in psql)
+# 2. Copy this file to application-local.yml in the project root (git-ignored) and adjust the values.
+# 3. ./mvnw spring-boot:run -Dspring-boot.run.profiles=local
+# Every value below is a local, non-real development value. Never reuse them in production.
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/vms
+    username: postgres
+    password: postgres
+
+app:
+  jwt:
+    secret: local-dev-only-jwt-secret-change-me-0123456789abcdef
+  bootstrap:
+    admin-email: admin@stark.local
+    admin-password: Admin@12345
+    staff-email: staff@stark.local
+    staff-password: Staff@12345
