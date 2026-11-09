@@ -32,7 +32,7 @@ import com.starkgroup.vms.support.ApiTestSupport;
 import io.zonky.test.db.AutoConfigureEmbeddedDatabase;
 
 /**
- * ADR 0022 / contract 6.1 against the real filter chain: 429 + Retry-After + Problem Details, no password check
+ * ADR 0022 / contract 7.1 against the real filter chain: 429 + Retry-After + Problem Details, no password check
  * while locked, no account enumeration, per-IP limit (X-Forwarded-For handling needs a real Tomcat: see
  * {@link ClientIpApiTest}). Every test uses its own e-mails
  * and client IPs, because the in-memory counters live as long as the shared Spring context.

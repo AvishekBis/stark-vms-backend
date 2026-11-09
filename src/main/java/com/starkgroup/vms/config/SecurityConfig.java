@@ -14,9 +14,10 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 import com.starkgroup.vms.auth.JwtAuthenticationFilter;
-import com.starkgroup.vms.auth.JwtService;
 import com.starkgroup.vms.auth.RestAccessDeniedHandler;
 import com.starkgroup.vms.auth.RestAuthenticationEntryPoint;
+import com.starkgroup.vms.auth.TokenAuthenticator;
+import com.starkgroup.vms.common.web.ProblemResponseWriter;
 
 /**
  * Stateless JWT security (guideline section 13). Role checks live on the endpoints via
@@ -33,7 +34,8 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
-                                                   JwtService jwtService,
+                                                   TokenAuthenticator tokenAuthenticator,
+                                                   ProblemResponseWriter problemResponseWriter,
                                                    RestAuthenticationEntryPoint authenticationEntryPoint,
                                                    RestAccessDeniedHandler accessDeniedHandler) throws Exception {
         http
@@ -52,7 +54,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, PUBLIC_GET_PATHS).permitAll()
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated())
-                .addFilterBefore(new JwtAuthenticationFilter(jwtService), UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(new JwtAuthenticationFilter(tokenAuthenticator, problemResponseWriter),
+                        UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

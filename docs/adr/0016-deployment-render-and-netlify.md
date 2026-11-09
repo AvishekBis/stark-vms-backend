@@ -2,118 +2,121 @@
 
 - **Status:** Accepted
 - **Date:** 2026-11-07
-- **Recorded:** retroactively, after implementation (the decision itself was taken when v1.0 was built; the
-  Netlify security headers and the demo-hint default were added on 2026-11-07)
+- **Recorded:** retroactively, after implementation (the decision itself was taken when v1.0 was built; v2.0 added
+  the storage variables to `render.yaml`, and on 2026-11-07 the security headers, the demo-hint default and the
+  storage key prefix were added)
 
 ## Context
 
-Guideline section 18 fixes the targets, all on free tiers:
-- the backend and its PostgreSQL on Render;
-- the Flutter Web build on Netlify;
-- CI on GitHub Actions.
-
-Other requirements that shape the deployment:
-- **Portability NFR:** "All configuration through environment variables; the same build runs locally and in
-  production".
-- **Section 13:** no secrets in Git.
-- **Section 14.2:** the API base URL comes from `--dart-define=API_BASE_URL=...` and is never hard-coded.
-- **18.3:** Render gives a `postgres://` URL, but Spring needs `jdbc:postgresql://`.
-- **18.4:** deep links such as `/vehicles/12` must survive a browser refresh on Netlify.
+Guideline section 18 fixes the targets: the backend and its PostgreSQL on Render, the Flutter Web build on Netlify,
+CI on GitHub Actions, all on free tiers. The portability NFR says "All configuration through environment
+variables; the same build runs locally and in production". Section 13 says no secrets in Git. Section 14.2 says
+the API base URL comes from `--dart-define=API_BASE_URL=...` and is never hard-coded. Render gives a `postgres://`
+URL, while Spring needs `jdbc:postgresql://` (18.3). Deep links such as `/vehicles/12` must survive a browser
+refresh on Netlify (18.4).
 
 ## Decision
 
 ### Backend on Render, as a Docker image
 
-- **`stark-vms-backend/Dockerfile`** is a multi-stage build:
-  - build stage: `maven:3.9.9-eclipse-temurin-21` runs `dependency:go-offline`, then `package -DskipTests`;
-  - run stage: `eclipse-temurin:21-jre`, as the non-root user `vms` (uid 10001), with
-    `JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"`.
-- **`stark-vms-backend/render.yaml`** is a Render Blueprint:
-  - a Docker web service `stark-vms-backend` and a PostgreSQL `stark-vms-db`, both on the free plan in `singapore`;
-  - health check `/actuator/health` and `autoDeploy: true`.
-- **Configuration comes only from the environment.** `application.yml` holds placeholders, never secrets. The
-  variables are:
+- **`stark-vms-backend/Dockerfile`**, multi-stage:
+  - build stage `maven:3.9.9-eclipse-temurin-21`: `dependency:go-offline`, then `package -DskipTests`;
+  - run stage `eclipse-temurin:21-jre`, as the non-root user `vms` (uid 10001);
+  - `JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"`.
+- **`stark-vms-backend/render.yaml`** (Render Blueprint):
+  - a Docker web service `stark-vms-backend` and a PostgreSQL `stark-vms-db`, both on the free plan in
+    `singapore`;
+  - health check `/actuator/health`, `autoDeploy: true`.
+- **Configuration only from the environment** (`application.yml` holds placeholders, no secrets):
   - `PORT`;
   - `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `DB_POOL_SIZE`;
   - `JWT_SECRET`, `JWT_EXPIRATION_MINUTES`;
   - `CORS_ALLOWED_ORIGINS`;
-  - `APP_ADMIN_*`, `APP_STAFF_*`.
-- **How the Blueprint fills them:**
+  - `APP_ADMIN_*`, `APP_STAFF_*`;
+  - `APP_STORAGE_PROVIDER`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_BUCKET`, `APP_STORAGE_KEY_PREFIX`
+    (`render.yaml` sets `prod/`).
+- In the Blueprint:
   - `DB_USERNAME` and `DB_PASSWORD` come `fromDatabase`;
   - `JWT_SECRET` uses `generateValue: true`;
-  - the other secrets are `sync: false`;
+  - every other secret is `sync: false` and is entered in the Render dashboard;
   - `DB_URL` is set by hand in its JDBC form (`stark-vms-backend/README.md`, "Deploy to Render").
-- **Server settings:** `server.port: ${PORT:8080}` and `forward-headers-strategy: framework`. *(Changed to `native`
-  on 2026-11-08 after the security review, see [0022](0022-login-throttling.md) Amendment: Tomcat's `RemoteIpValve`
-  trusts `X-Forwarded-*` only from internal proxies and ignores the client-controlled `Forwarded` header.)*
-- **Profiles:** production runs with no profile, and the `local` profile must never be set on Render.
-- **Start-up:** Flyway migrates the schema, then `AdminBootstrap` creates the configured accounts.
+- `server.port: ${PORT:8080}` and `forward-headers-strategy: framework` (Render terminates TLS in front of the
+  app). *(Changed to `native` on 2026-11-08 after the security review, see [0022](0022-login-throttling.md)
+  Amendment: Tomcat's `RemoteIpValve` trusts `X-Forwarded-*` only from internal proxies, takes the right-most
+  untrusted `X-Forwarded-For` entry and ignores the client-controlled `Forwarded` header.)*
+- Profiles:
+  - production runs with no profile;
+  - the `local` profile (demo data, localhost CORS patterns) must never be set on Render.
+- Flyway migrates on start-up. `AdminBootstrap` creates the configured accounts.
 
 ### Frontend on Netlify, as a prebuilt static site
 
-- **Build:** `flutter build web --release --dart-define=API_BASE_URL=https://<service>.onrender.com/api/v1`.
-  - `AppConfig.apiBaseUrl` has no default. A build without it shows `MissingConfigurationApp`
-    (`FE/core/config/app_config.dart`, `FE/bootstrap.dart`).
+- Built with `flutter build web --release --dart-define=API_BASE_URL=https://<service>.onrender.com/api/v1`.
+  - `AppConfig.apiBaseUrl` has no default. A build without it shows `MissingConfigurationApp` instead of calling
+    a hard-coded server (`FE/core/config/app_config.dart`, `FE/bootstrap.dart`).
   - `SHOW_DEMO_CREDENTIALS` defaults to `!kReleaseMode`.
 - **`stark-vms-frontend/netlify.toml`:**
-  - publishes `build/web`, with the SPA rewrite `/* → /index.html 200`;
-  - sends the headers `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`,
-    `X-Content-Type-Options: nosniff` and `Referrer-Policy: strict-origin-when-cross-origin`;
-  - `web/_redirects` and `web/_headers` hold the same rules for a drag-and-drop deploy.
-- **URLs:** the app uses path URLs (`usePathUrlStrategy()` in `FE/main.dart`).
+  - publishes `build/web`;
+  - SPA rewrite `/* → /index.html 200`;
+  - headers `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`,
+    `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`.
+  - `web/_redirects` and `web/_headers` hold the same rules for a drag-and-drop deploy of `build/web`.
+- The app uses path URLs (`usePathUrlStrategy()` in `FE/main.dart`), which is why the rewrite is needed.
 
-### CI (GitHub Actions), no deploy step
+### CI (GitHub Actions), no automatic deploy step
 
-- **Backend** (`stark-vms-backend/.github/workflows/ci.yml`): runs on every push and every pull request.
-  - Temurin 21 → `mvn -B verify`;
-  - uploads the surefire and JaCoCo reports.
-- **Frontend** (`stark-vms-frontend/.github/workflows/ci.yml`): runs on every push to any branch and every pull
-  request.
-  - Flutter 3.47.7 → `dart format --set-exit-if-changed` → `flutter analyze` → `flutter test` →
-    `flutter build web --release`, with `API_BASE_URL` and `SHOW_DEMO_CREDENTIALS` taken from repository variables;
-  - uploads `build/web`.
-- **Deploys:** Render deploys from the repository (`autoDeploy`). Netlify receives the prebuilt `build/web`.
+- Backend (`stark-vms-backend/.github/workflows/ci.yml`): every push to any branch and every pull request run
+  Temurin 21 → `mvn -B verify` and upload the surefire and JaCoCo reports.
+- Frontend (`stark-vms-frontend/.github/workflows/ci.yml`):
+  - every push to any branch and every pull request run Flutter 3.47.7 → `flutter pub get`,
+    `dart format --set-exit-if-changed`, `flutter analyze`, `flutter test`, then
+    `flutter build web --release` with `API_BASE_URL` and `SHOW_DEMO_CREDENTIALS` from repository variables;
+  - the `build/web` artifact is uploaded.
+- Render deploys from the repository itself (`autoDeploy`). Netlify gets the prebuilt `build/web` (drag-and-drop,
+  CLI or a build hook).
 
 ## Alternatives considered
 
 | Alternative | Why rejected |
 |---|---|
-| Render native Java runtime instead of Docker | The guideline gives a Dockerfile (18.3), and the image also runs locally, the same as on Render. |
-| Other hosts (Fly.io, Railway, a VPS) | Not the course targets. |
-| Serve the Flutter build from Spring Boot | Couples the frontend and backend releases. It would also mean the sleeping Render instance delays the static UI, whereas Netlify serves the UI even while the API sleeps. |
-| Build Flutter on Netlify | The Netlify build would have to install the Flutter SDK on every build. CI already builds with the pinned version. |
-| An `application-prod.yml` in Git | It would put secrets in Git (guideline 13). |
-| Hash URLs (`/#/vehicles/12`) | Uglier URLs; the rewrite is one line. |
+| Render native Java runtime (buildpack) instead of Docker | The guideline gives a Dockerfile (18.3); the image also runs locally (`docker run`) exactly as on Render. |
+| Fly.io, Railway, Heroku, a VPS | Not the course targets; free tiers and terms differ. |
+| Serve the Flutter build from Spring Boot (one deployable) | Couples frontend and backend releases and makes the sleeping Render instance also delay the static UI. Netlify serves the UI from a CDN even while the API sleeps, so the "Connecting to server…" message can be shown. |
+| Build Flutter on Netlify | Netlify's build environment would have to install the Flutter SDK on every build. The build is already reproducible in CI with the pinned Flutter version. |
+| `application-prod.yml` with production values in Git | Secrets in Git (guideline 13). Everything environment-specific is a variable instead. |
+| Hash URLs (`/#/vehicles/12`) to avoid the SPA rewrite | Uglier URLs; the rewrite is one line. |
+| Deploy from CI (Render deploy hook, Netlify CLI with a token) | Needs deploy secrets in GitHub. Kept as a follow-up together with branch protection. |
 
 ## Consequences
 
 **Positive**
-- The same image and the same web build run locally and in production. Only the variables differ.
-- No secret is in either repository.
-- A misconfigured frontend build fails visibly.
+- The same image and the same web build run locally and in production; only variables differ.
+- No secret is in either repository. `JWT_SECRET` is generated by Render.
+- A misconfigured frontend build fails visibly, not silently.
 
 **Negative / accepted trade-offs**
-- The free Render instance sleeps: a cold start can take up to about a minute, and there is only one instance
-  ([0015](0015-non-functional-requirements-strategy.md)).
-- `DB_URL` must be converted by hand, and `API_BASE_URL` is compiled into the build.
-- `render.yaml` does not pin the PostgreSQL major version.
-- CI does not deploy. Branch protection (18.2) is a repository setting and is not recorded in the code.
+- Free Render sleeps (cold start up to about a minute) and has one instance ([0015](0015-non-functional-requirements-strategy.md)).
+- `DB_URL` must be converted by hand from Render's `postgres://` string.
+- `API_BASE_URL` is compiled in. A new backend URL needs a new frontend build.
+- `render.yaml` does not pin the PostgreSQL major version ([0006](0006-postgresql-everywhere-flyway-and-validate.md)).
+- CI does not deploy. Merging and deploying are separate manual steps, and branch protection ("merging requires a
+  green build", 18.2) is a repository setting that is not recorded in the code.
+- There is no full CSP yet ([0007](0007-authentication-stateless-jwt.md)).
 
 **Follow-ups**
-- Protect `main` with required CI checks.
-- Optionally deploy from CI.
-- Pin the database version.
+- Protect `main` in both repositories (required CI checks).
+- Optionally deploy from CI with a Render deploy hook and the Netlify CLI.
+- Pin the database version in `render.yaml`.
 
 ## Related
 
-- Guideline: sections 6 (Portability), 13, 14.2, 18.1–18.4, 21.
+- Guideline: sections 6 (Portability), 13, 14.2, 18.1–18.4, 21 (deployment risks).
 - ADRs: [0006](0006-postgresql-everywhere-flyway-and-validate.md), [0007](0007-authentication-stateless-jwt.md),
-  [0015](0015-non-functional-requirements-strategy.md), [0020](0020-test-strategy-and-ci.md).
-- Files:
-  - backend: `stark-vms-backend/Dockerfile`, `stark-vms-backend/render.yaml`,
-    `stark-vms-backend/src/main/resources/application.yml`, `stark-vms-backend/.github/workflows/ci.yml`;
-  - frontend: `stark-vms-frontend/netlify.toml`, `stark-vms-frontend/web/_redirects`,
-    `stark-vms-frontend/web/_headers`, `stark-vms-frontend/.github/workflows/ci.yml`,
-    `FE/core/config/app_config.dart`, `FE/bootstrap.dart`, `FE/main.dart`.
+  [0013](0013-document-file-storage-behind-storageservice.md), [0015](0015-non-functional-requirements-strategy.md).
+- Files: `stark-vms-backend/Dockerfile`, `stark-vms-backend/render.yaml`,
+  `stark-vms-backend/src/main/resources/application.yml`, `stark-vms-backend/.github/workflows/ci.yml`,
+  `stark-vms-frontend/netlify.toml`, `stark-vms-frontend/web/_redirects`, `stark-vms-frontend/web/_headers`,
+  `stark-vms-frontend/.github/workflows/ci.yml`, `FE/core/config/app_config.dart`, `FE/bootstrap.dart`, `FE/main.dart`,
+  `stark-vms-backend/README.md` (Configuration, Deploy to Render), `stark-vms-frontend/README.md` (Build and deploy).
 
 Path prefix: `FE/` = `stark-vms-frontend/lib/`.

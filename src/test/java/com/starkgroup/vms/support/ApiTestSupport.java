@@ -4,6 +4,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -45,6 +46,19 @@ public final class ApiTestSupport {
 
     public static String staffToken(MockMvc mockMvc) throws Exception {
         return bearerToken(mockMvc, STAFF_EMAIL, STAFF_PASSWORD);
+    }
+
+    /**
+     * Empties every feature table, children first (the foreign keys are ON DELETE RESTRICT). API test classes
+     * share one Spring context and one embedded database, so each test starts from a clean state. Users stay.
+     */
+    public static void cleanDatabase(JdbcTemplate jdbcTemplate) {
+        jdbcTemplate.execute("DELETE FROM maintenance_records");
+        jdbcTemplate.execute("DELETE FROM vehicle_documents");
+        jdbcTemplate.execute("DELETE FROM stored_files");
+        jdbcTemplate.execute("DELETE FROM vehicle_driver_assignments");
+        jdbcTemplate.execute("DELETE FROM drivers");
+        jdbcTemplate.execute("DELETE FROM vehicles");
     }
 
     public static JsonNode readJson(MvcResult result) throws Exception {

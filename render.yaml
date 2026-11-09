@@ -36,6 +36,19 @@ services:
         sync: false
       - key: APP_STAFF_PASSWORD
         sync: false
+      # v2.0 document storage: "database" (default, bytes in PostgreSQL, survives redeploys) or "supabase".
+      - key: APP_STORAGE_PROVIDER
+        value: database
+      # Only needed when APP_STORAGE_PROVIDER=supabase (private bucket; the service key never leaves the server).
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: SUPABASE_BUCKET
+        value: vehicle-documents
+      # Object-path prefix in the bucket, so production files never mix with dev files in a shared bucket.
+      - key: APP_STORAGE_KEY_PREFIX
+        value: "prod/"
 
 databases:
   - name: stark-vms-db

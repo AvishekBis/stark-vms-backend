@@ -22,9 +22,10 @@ public class OpenApiConfig {
         return new OpenAPI()
                 .info(new Info()
                         .title("Stark Group VMS API")
-                        .version("v1.0")
-                        .description("Vehicle Management System. Log in via POST /api/v1/auth/login, "
-                                + "then click Authorize and paste the accessToken."))
+                        .version("v2.0")
+                        .description("Vehicle Management System v2.0: vehicles, drivers and assignments, documents "
+                                + "with expiry tracking, maintenance and the dashboard. Log in via "
+                                + "POST /api/v1/auth/login, then click Authorize and paste the accessToken."))
                 .components(new Components().addSecuritySchemes(BEARER_SCHEME, new SecurityScheme()
                         .type(SecurityScheme.Type.HTTP)
                         .scheme("bearer")

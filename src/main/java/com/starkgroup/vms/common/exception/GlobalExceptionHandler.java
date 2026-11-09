@@ -33,16 +33,19 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 
+import com.starkgroup.vms.document.storage.StorageException;
+
 import jakarta.servlet.http.HttpServletRequest;
 
 /**
  * The one central error handler: every error leaves the API as RFC 9457 Problem Details
- * (API contract sections 3 and 6.3). Stack traces are never returned.
+ * (API contract section 3). Stack traces are never returned.
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
@@ -73,8 +76,19 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(BusinessRuleException.class)
     public ResponseEntity<ProblemDetail> handleBusinessRule(BusinessRuleException ex, HttpServletRequest request) {
-        return respond(ProblemDetails.of(HttpStatus.CONFLICT, ApiErrorType.CONFLICT, "Business rule violated",
-                ex.getMessage()), request);
+        ProblemDetail problem = ex.getField() == null
+                ? ProblemDetails.of(HttpStatus.CONFLICT, ex.getType(), ex.getTitle(), ex.getMessage())
+                : ProblemDetails.withErrors(HttpStatus.CONFLICT, ex.getType(), ex.getTitle(), ex.getMessage(),
+                        List.of(new FieldErrorResponse(ex.getField(), ex.getMessage())));
+        return respond(problem, request);
+    }
+
+    @ExceptionHandler(FieldValidationException.class)
+    public ResponseEntity<ProblemDetail> handleFieldValidation(FieldValidationException ex,
+                                                               HttpServletRequest request) {
+        String detail = ex.getDetail() == null ? VALIDATION_DETAIL : ex.getDetail();
+        return respond(ProblemDetails.withErrors(HttpStatus.BAD_REQUEST, ApiErrorType.VALIDATION, VALIDATION_TITLE,
+                detail, List.of(new FieldErrorResponse(ex.getField(), ex.getMessage()))), request);
     }
 
     /** ADR 0023: the version sent by the client is not the stored one. No errors[]: the whole record changed. */
@@ -86,7 +100,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     /**
      * ADR 0023: a concurrent commit won between the service's version check and the flush (Hibernate's versioned
      * UPDATE matched no row). Same 409 as {@link StaleVersionException}; the record noun comes from the entity class
-     * name ("Vehicle" becomes "vehicle"), so this handler needs no feature imports.
+     * name ("MaintenanceRecord" becomes "maintenance record"), so this handler needs no feature imports.
      */
     @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
     public ResponseEntity<ProblemDetail> handleOptimisticLockingFailure(ObjectOptimisticLockingFailureException ex,
@@ -107,6 +121,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                 .header(HttpHeaders.RETRY_AFTER, Long.toString(ex.getRetryAfterSeconds()))
                 .body(problem);
+    }
+
+    @ExceptionHandler(FileTooLargeException.class)
+    public ResponseEntity<ProblemDetail> handleFileTooLarge(FileTooLargeException ex, HttpServletRequest request) {
+        return respond(fileTooLargeProblem(), request);
     }
 
     @ExceptionHandler(BadRequestException.class)
@@ -160,6 +179,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 "The database is not reachable right now. Please try again shortly."), request);
     }
 
+    /** File storage failed (stored bytes missing, Supabase down, unreadable upload): 503, no stack trace. */
+    @ExceptionHandler(StorageException.class)
+    public ResponseEntity<ProblemDetail> handleStorage(StorageException ex, HttpServletRequest request) {
+        log.warn("Storage failure on {} {}: {}", request.getMethod(), request.getRequestURI(), ex.getMessage());
+        return respond(ProblemDetails.of(HttpStatus.SERVICE_UNAVAILABLE, ApiErrorType.INTERNAL, "Storage unavailable",
+                "The file storage is not available right now. Please try again later."), request);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetail> handleUnexpected(Exception ex, HttpServletRequest request) {
         log.error("Unexpected error on {} {}", request.getMethod(), request.getRequestURI(), ex);
@@ -174,7 +201,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                                                                   WebRequest request) {
         Map<String, String> firstErrorPerField = new LinkedHashMap<>();
         for (FieldError fieldError : ex.getBindingResult().getFieldErrors()) {
-            firstErrorPerField.putIfAbsent(fieldError.getField(), fieldError.getDefaultMessage());
+            firstErrorPerField.putIfAbsent(fieldError.getField(), messageOf(fieldError));
         }
         List<FieldErrorResponse> errors = firstErrorPerField.entrySet().stream()
                 .map(entry -> new FieldErrorResponse(entry.getKey(), entry.getValue()))
@@ -197,6 +224,18 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         ProblemDetail problem = ProblemDetails.withErrors(HttpStatus.BAD_REQUEST, ApiErrorType.VALIDATION,
                 VALIDATION_TITLE, VALIDATION_DETAIL, errors);
         return handleExceptionInternal(ex, problem, headers, HttpStatus.BAD_REQUEST, request);
+    }
+
+    /**
+     * Multipart limit hit while Tomcat parses the request (spring.servlet.multipart.*) - the same 413 as the
+     * explicit size check in the document upload (BR-07).
+     */
+    @Override
+    protected ResponseEntity<Object> handleMaxUploadSizeExceededException(MaxUploadSizeExceededException ex,
+                                                                          HttpHeaders headers,
+                                                                          HttpStatusCode status,
+                                                                          WebRequest request) {
+        return handleExceptionInternal(ex, fileTooLargeProblem(), headers, HttpStatus.PAYLOAD_TOO_LARGE, request);
     }
 
     @Override
@@ -237,18 +276,12 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return super.handleExceptionInternal(ex, problemBody, headers, statusCode, request);
     }
 
-    private static ProblemDetail duplicateProblem(DuplicateResourceException ex) {
-        return ProblemDetails.withErrors(HttpStatus.CONFLICT, ex.getType(), ex.getTitle(), ex.getMessage(),
-                List.of(new FieldErrorResponse(ex.getField(), ex.getMessage())));
-    }
-
     private static ProblemDetail staleVersionProblem(String detail) {
         return ProblemDetails.of(HttpStatus.CONFLICT, ApiErrorType.STALE_VERSION, StaleVersionException.TITLE, detail);
     }
 
     /**
-     * "com.starkgroup.vms.vehicle.Vehicle" becomes "vehicle" (a two-word class name becomes two words); "record"
-     * when unknown.
+     * "com.starkgroup.vms.maintenance.MaintenanceRecord" becomes "maintenance record"; "record" when unknown.
      */
     static String recordNoun(@Nullable String persistentClassName) {
         if (persistentClassName == null || persistentClassName.isBlank()) {
@@ -256,6 +289,27 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         }
         String simpleName = persistentClassName.substring(persistentClassName.lastIndexOf('.') + 1);
         return simpleName.replaceAll("(?<=[a-z0-9])(?=[A-Z])", " ").toLowerCase(Locale.ROOT);
+    }
+
+    private static ProblemDetail fileTooLargeProblem() {
+        return ProblemDetails.of(HttpStatus.PAYLOAD_TOO_LARGE, ApiErrorType.FILE_TOO_LARGE, "File too large",
+                FileTooLargeException.MESSAGE);
+    }
+
+    /**
+     * A type-conversion failure while binding form fields (e.g. a bad date or enum in a multipart upload) carries
+     * Spring's internal conversion message; it is replaced by a short, safe one.
+     */
+    private static String messageOf(FieldError fieldError) {
+        if (fieldError.isBindingFailure()) {
+            return "Invalid value or wrong data type.";
+        }
+        return fieldError.getDefaultMessage();
+    }
+
+    private static ProblemDetail duplicateProblem(DuplicateResourceException ex) {
+        return ProblemDetails.withErrors(HttpStatus.CONFLICT, ex.getType(), ex.getTitle(), ex.getMessage(),
+                List.of(new FieldErrorResponse(ex.getField(), ex.getMessage())));
     }
 
     private static ResponseEntity<ProblemDetail> respond(ProblemDetail problem, HttpServletRequest request) {

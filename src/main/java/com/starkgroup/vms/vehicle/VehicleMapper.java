@@ -2,6 +2,7 @@ package com.starkgroup.vms.vehicle;
 
 import org.springframework.stereotype.Component;
 
+import com.starkgroup.vms.driver.Driver;
 import com.starkgroup.vms.vehicle.dto.VehicleRequest;
 import com.starkgroup.vms.vehicle.dto.VehicleResponse;
 
@@ -23,7 +24,15 @@ public class VehicleMapper {
         copyDetails(request, vehicle);
     }
 
+    /** Response without a current driver (e.g. a vehicle that was just registered). */
     public VehicleResponse toResponse(Vehicle vehicle) {
+        return toResponse(vehicle, null);
+    }
+
+    /**
+     * @param currentDriver the vehicle's current driver, or {@code null}
+     */
+    public VehicleResponse toResponse(Vehicle vehicle, Driver currentDriver) {
         return new VehicleResponse(
                 vehicle.getId(),
                 vehicle.getVehicleNumber(),
@@ -37,6 +46,8 @@ public class VehicleMapper {
                 vehicle.getCreatedAt(),
                 vehicle.getUpdatedAt(),
                 vehicle.getCreatedBy(),
+                currentDriver == null ? null : new VehicleResponse.CurrentDriver(currentDriver.getId(),
+                        currentDriver.getFullName(), currentDriver.getPhone()),
                 vehicle.getVersion());
     }
 

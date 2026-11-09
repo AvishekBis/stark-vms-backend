@@ -19,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class AdminBootstrap implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(AdminBootstrap.class);
-    static final int MIN_PASSWORD_LENGTH = 8;
 
     private final BootstrapProperties properties;
     private final UserRepository userRepository;
@@ -50,10 +49,12 @@ public class AdminBootstrap implements ApplicationRunner {
         if (userRepository.existsByEmail(email)) {
             return;
         }
-        if (password == null || password.length() < MIN_PASSWORD_LENGTH) {
-            throw new IllegalStateException("Bootstrap password for " + email + " must be at least "
-                    + MIN_PASSWORD_LENGTH + " characters.");
+        if (password == null) {
+            throw new IllegalStateException("Bootstrap password for " + email + " is not set.");
         }
+        PasswordPolicy.violation(password).ifPresent(rule -> {
+            throw new IllegalStateException("Bootstrap password for " + email + ": " + rule);
+        });
         userRepository.save(new User(email, passwordEncoder.encode(password), fullName.trim(), role));
         log.info("Created bootstrap {} account {}", role, email);
     }

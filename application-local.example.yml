@@ -17,3 +17,12 @@ app:
     admin-password: Admin@12345
     staff-email: staff@stark.local
     staff-password: Staff@12345
+  # Document files: "database" (default) needs nothing else. For "supabase" fill in the values below; key-prefix
+  # keeps local objects apart from production ones when both use the same bucket (production uses "prod/").
+  storage:
+    provider: database
+    supabase:
+      url: https://your-project.supabase.co
+      service-key: local-service-key-goes-here
+      bucket: vehicle-documents
+      key-prefix: dev/

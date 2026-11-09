@@ -167,6 +167,7 @@ class AuthApiTest {
                 .andExpect(jsonPath("$.paths['/api/v1/vehicles'].post.responses['409']").exists())
                 .andExpect(jsonPath("$.paths['/api/v1/vehicles/{id}'].delete.responses['204']").exists())
                 .andExpect(jsonPath("$.paths['/api/v1/vehicles/{id}'].delete.responses['403']").exists())
+                .andExpect(jsonPath("$.paths['/api/v1/vehicles/{id}'].delete.responses['409']").exists())
                 .andExpect(jsonPath("$.paths['/api/v1/auth/login'].post.responses['200']").exists())
                 .andExpect(jsonPath("$.paths['/api/v1/auth/login'].post.responses['401']").exists());
     }

@@ -25,7 +25,8 @@ public class CorsConfig {
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE, HttpHeaders.ACCEPT));
         // Retry-After: the 429 of a throttled login (ADR 0022).
-        configuration.setExposedHeaders(List.of(HttpHeaders.LOCATION, HttpHeaders.RETRY_AFTER));
+        configuration.setExposedHeaders(
+                List.of(HttpHeaders.LOCATION, HttpHeaders.CONTENT_DISPOSITION, HttpHeaders.RETRY_AFTER));
         configuration.setAllowCredentials(false);
         configuration.setMaxAge(PREFLIGHT_CACHE_SECONDS);
 
