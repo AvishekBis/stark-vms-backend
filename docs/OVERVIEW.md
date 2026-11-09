@@ -75,7 +75,7 @@ flutter pub get
 flutter run -d chrome --web-port 5000 --dart-define=API_BASE_URL=http://localhost:8080/api/v1
 ```
 
-Demo accounts (local only, not real credentials):
+Demo accounts when running locally (the live site uses the same e-mails, see below):
 
 | Role | Email | Password |
 |---|---|---|
@@ -94,7 +94,32 @@ Test evidence of the last run (guideline 22): [docs/test-reports/backend-summary
 (tests per class, line coverage per service) and [docs/test-reports/frontend-test-report.txt](https://github.com/AvishekBis/stark-vms-frontend/blob/main/docs/test-reports/frontend-test-report.txt).
 Performance (guideline 6, < 500 ms for 1,000 vehicles): measured results in [docs/PERFORMANCE.md](PERFORMANCE.md).
 
+## Live deployment
+| | URL |
+|---|---|
+| Frontend (Netlify) | <https://stark-vms-avishek.netlify.app> |
+| API (Render) | <https://stark-vms-backend-i2i2.onrender.com/api/v1> |
+| Swagger UI | <https://stark-vms-backend-i2i2.onrender.com/swagger-ui.html> |
+| Health | <https://stark-vms-backend-i2i2.onrender.com/actuator/health> |
+
+Demo accounts on the live site (throw-away credentials, not used anywhere else):
+
+| Role | Email | Password |
+|---|---|---|
+| ADMIN | admin@stark.local | `Wildstone99@b` |
+| STAFF | staff@stark.local | `Wildstone98@b` |
+
+Sign in as STAFF to see the role rules: the Delete action on a vehicle and the Users screen are ADMIN-only, and
+the API answers 403.
+
+**The free Render instance sleeps after a while, so the first request can take up to a minute.** The app shows a
+"Connecting to server…" message meanwhile. Open the site once before reviewing it.
+
+The live database holds the same fleet as the local demo data, entered through the API as the ADMIN user: 26
+vehicles, 12 drivers, 9 current assignments, 20 documents (3 expired, 5 expiring soon) and 30 maintenance records.
+The automatic seeder stays off in production ([ADR 0021](adr/0021-demo-data-seeded-into-the-real-database.md)).
+
 ## Deployment
 Backend → Render (Dockerfile + `render.yaml`; documents are stored in PostgreSQL by default so they survive
 redeploys, Supabase Storage optional), frontend → Netlify (`netlify.toml`, `web/_redirects`).
-Step-by-step instructions are in each project's README. Live URLs are placeholders until deployed.
+Step-by-step instructions are in each project's README.

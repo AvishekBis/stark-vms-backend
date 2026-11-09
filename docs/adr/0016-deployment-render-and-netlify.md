@@ -108,6 +108,31 @@ refresh on Netlify (18.4).
 - Optionally deploy from CI with a Render deploy hook and the Netlify CLI.
 - Pin the database version in `render.yaml`.
 
+## Deployed (2026-11-09)
+
+Both assignments share one Render service and one Netlify site, because the free tiers allow only a small number
+of each and v2.x keeps every v1.0 feature working.
+
+| | URL |
+|---|---|
+| Frontend (Netlify) | <https://stark-vms-avishek.netlify.app> |
+| Backend (Render, Singapore, free) | <https://stark-vms-backend-i2i2.onrender.com> |
+| Database | Render PostgreSQL `stark-vms-db` (free) |
+
+What the first deployment taught us, now written into the backend README:
+
+- **Render renames the database.** `databaseName: vms` in `render.yaml` became `vms_vyqp`. `DB_URL` must use the
+  dashboard's *Database* value, or start-up fails with `FATAL: database "vms" does not exist`.
+- **The first Blueprint deploy always fails.** `DB_URL` is `sync: false` and the database host does not exist
+  until Render has created it, so the real URL can only be set on the second attempt.
+- **Netlify sites start private.** A new team's site answers 401 (`/edge-access`) to everyone who is not signed
+  in to Netlify. *Project configuration → General → Visitor access → Public* is required before review.
+- **The site name is part of the contract**: `CORS_ALLOWED_ORIGINS` has to match it exactly, so rename the
+  Netlify site before building the frontend against it.
+- **Demo data on the live site was entered through the API as the ADMIN user**, not by the seeder:
+  `app.seed-demo-data` stays `false` in production, as [0021](0021-demo-data-seeded-into-the-real-database.md)
+  requires. 26 vehicles, 12 drivers, 9 assignments, 20 documents and 30 maintenance records.
+
 ## Related
 
 - Guideline: sections 6 (Portability), 13, 14.2, 18.1–18.4, 21 (deployment risks).

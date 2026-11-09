@@ -19,13 +19,23 @@ Fleet management REST API for Stark Group, **version 2.0.0 (Assignment 2, "Advan
 
 | | URL |
 |---|---|
-| Frontend | `https://<your-site>.netlify.app` |
-| API base | `https://<your-service>.onrender.com/api/v1` |
-| API docs (Swagger UI) | `https://<your-service>.onrender.com/swagger-ui.html` |
-| Health | `https://<your-service>.onrender.com/actuator/health` |
+| Frontend | <https://stark-vms-avishek.netlify.app> |
+| API base | <https://stark-vms-backend-i2i2.onrender.com/api/v1> |
+| API docs (Swagger UI) | <https://stark-vms-backend-i2i2.onrender.com/swagger-ui.html> |
+| Health | <https://stark-vms-backend-i2i2.onrender.com/actuator/health> |
 
-Demo login (non-real credentials, demo/local only): `admin@stark.local` / `Admin@12345` (ADMIN),
-`staff@stark.local` / `Staff@12345` (STAFF).
+Demo accounts on the live site (throw-away credentials, not used anywhere else):
+
+| Role | Email | Password |
+|---|---|---|
+| ADMIN | admin@stark.local | `Wildstone99@b` |
+| STAFF | staff@stark.local | `Wildstone98@b` |
+
+Signing in as STAFF shows the role rules: deleting a vehicle and the Users screen are ADMIN-only, and the API
+answers 403.
+
+**The free Render instance sleeps after a while, so the first request can take up to a minute.** The app shows a
+"Connecting to server…" message meanwhile. Open the site once before reviewing it.
 
 > Render free instances sleep when idle; the first request can take up to a minute.
 
@@ -490,12 +500,17 @@ The repository contains a Render Blueprint (`render.yaml`) and a multi-stage `Do
    `/actuator/health`, `JWT_SECRET` generated). Without Blueprints: create a PostgreSQL instance, then a Web
    Service with runtime *Docker* from this repository.
 2. **Convert the database URL.** Render shows a connection string like
-   `postgres://vms:PASSWORD@dpg-xxxx-a.singapore-postgres.render.com/vms`. Spring needs the JDBC form without the
-   credentials:
-   - `DB_URL` = `jdbc:postgresql://dpg-xxxx-a.singapore-postgres.render.com:5432/vms`
-     (use the *internal* host `dpg-xxxx-a` when the service and DB are in the same region)
-   - `DB_USERNAME` = `vms`, `DB_PASSWORD` = `PASSWORD` (the Blueprint fills these two from the database)
-3. Set the remaining variables in the dashboard: `CORS_ALLOWED_ORIGINS=https://<your-site>.netlify.app`,
+   `postgres://vms_user:PASSWORD@dpg-xxxx-a.singapore-postgres.render.com/vms_ab12`. Spring needs the JDBC form
+   without the credentials:
+   - `DB_URL` = `jdbc:postgresql://dpg-xxxx-a:5432/vms_ab12`
+     (the *internal* host `dpg-xxxx-a` when the service and the database are in the same region)
+   - `DB_USERNAME` and `DB_PASSWORD` are filled from the database by the Blueprint; leave them alone.
+   - **Take the database name from the dashboard, not from `render.yaml`.** Render appends a suffix to
+     `databaseName`, so `vms` becomes something like `vms_ab12`. Using the name from the Blueprint fails the
+     deploy with `FATAL: database "vms" does not exist`. Read the **Database** field under *Connections*.
+   - `DB_URL` is `sync: false`, so it cannot be filled in before the database exists. The first Blueprint deploy
+     therefore fails on purpose; set the real URL afterwards and redeploy.
+3. Set the remaining variables in the dashboard: `CORS_ALLOWED_ORIGINS=https://<your-site>.netlify.app (here: https://stark-vms-avishek.netlify.app)`,
    `APP_ADMIN_EMAIL`, `APP_ADMIN_PASSWORD` (and optionally the `APP_STAFF_*` values). If you do not use the
    Blueprint, also set `JWT_SECRET` (≥ 32 bytes). Do **not** set `SPRING_PROFILES_ACTIVE=local` in production.
 4. Deploy. Render injects `PORT`; the app binds to it (`server.port=${PORT:8080}`). Flyway creates the schema on
