@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -29,20 +30,21 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.starkgroup.vms.auth.dto.ChangePasswordRequest;
 import com.starkgroup.vms.auth.dto.LoginRequest;
+import com.starkgroup.vms.common.exception.FieldValidationException;
 import com.starkgroup.vms.common.exception.InvalidCredentialsException;
 import com.starkgroup.vms.common.exception.TooManyLoginAttemptsException;
 import com.starkgroup.vms.support.MutableClock;
 
 /**
- * ADR 0022 order inside login: a locked e-mail is refused before the password is checked, every generic 401 is
- * counted (reserved before the password check, so parallel requests cannot overshoot), a success clears the
- * e-mail's count, a database failure is not counted.
+ * ADR 0022 order inside login (locked → no password check; the attempt is counted before the check) and ADR 0024
+ * own password change (throttled like a login of the e-mail).
  */
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
 
-    private static final Instant NOW = Instant.parse("2026-11-07T04:00:00Z");
+    private static final Instant NOW = Instant.parse("2026-11-07T04:00:00.123456789Z");
     private static final String IP = "203.0.113.7";
     private static final String SECRET = "unit-test-jwt-secret-0123456789abcdef-0123456789";
 
@@ -61,7 +63,7 @@ class AuthServiceTest {
         loginAttemptService = new LoginAttemptService(new LoginThrottleProperties(5, 20, Duration.ofMinutes(15)),
                 clock);
         authService = new AuthService(userRepository, passwordEncoder, new JwtService(new JwtProperties(SECRET, 60),
-                clock), loginAttemptService);
+                clock), loginAttemptService, clock);
     }
 
     @Test
@@ -82,7 +84,7 @@ class AuthServiceTest {
     @Test
     void wrongPasswordUnknownEmailAndDisabledUserAllCountAsFailures() {
         User disabled = user("disabled@stark.local");
-        ReflectionTestUtils.setField(disabled, "enabled", false);
+        disabled.updateAccount("Disabled", Role.STAFF, false);
         when(userRepository.findByEmail("disabled@stark.local")).thenReturn(Optional.of(disabled));
         when(userRepository.findByEmail("nobody@stark.local")).thenReturn(Optional.empty());
         when(passwordEncoder.matches(any(), any())).thenReturn(true);
@@ -116,6 +118,37 @@ class AuthServiceTest {
                 .isInstanceOf(InvalidCredentialsException.class);
         assertThat(loginAttemptService.remainingLock("officer@stark.local", IP)).as("1 failure after the success")
                 .isZero();
+    }
+
+    @Test
+    void ownPasswordChangeStoresTheNewHashAndTheChangeTimeFromTheClock() {
+        User user = user("officer@stark.local");
+        when(userRepository.findById(7L)).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("Old@12345", "hash")).thenReturn(true);
+        when(passwordEncoder.encode("N3w-Staff-Pass")).thenReturn("new-hash");
+
+        authService.changeOwnPassword(principal(), new ChangePasswordRequest("Old@12345", "N3w-Staff-Pass"));
+
+        assertThat(user.getPasswordHash()).isEqualTo("new-hash");
+        assertThat(user.getPasswordChangedAt()).isEqualTo(Instant.parse("2026-11-07T04:00:00.123456Z"));
+        verify(userRepository).saveAndFlush(user);
+    }
+
+    @Test
+    void wrongCurrentPasswordIsAFieldErrorNotAnAuthenticationError() {
+        User user = user("officer@stark.local");
+        when(userRepository.findById(7L)).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("Wrong@1234", "hash")).thenReturn(false);
+
+        assertThatThrownBy(() -> authService.changeOwnPassword(principal(),
+                new ChangePasswordRequest("Wrong@1234", "N3w-Staff-Pass")))
+                .isInstanceOfSatisfying(FieldValidationException.class, ex -> {
+                    assertThat(ex.getField()).isEqualTo("currentPassword");
+                    assertThat(ex.getMessage()).isEqualTo("Current password is incorrect.");
+                    assertThat(ex.getDetail()).isEqualTo("Current password is incorrect.");
+                });
+        assertThat(user.getPasswordHash()).isEqualTo("hash");
+        verify(userRepository, never()).saveAndFlush(any());
     }
 
     /** Review finding F1 / SEC-4: at counter = limit - 1, parallel logins get exactly one password check. */
@@ -176,9 +209,61 @@ class AuthServiceTest {
         assertThat(loginAttemptService.remainingLock("officer@stark.local", IP)).isZero();
     }
 
+    /** Review finding SEC-7 / F3: wrong current passwords are throttled like failed logins of the e-mail. */
+    @Test
+    void wrongCurrentPasswordsLockTheEmailAndThenTheChangeIsRefusedWithoutAPasswordCheck() {
+        User user = user("officer@stark.local");
+        when(userRepository.findById(7L)).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("Wrong@1234", "hash")).thenReturn(false);
+        for (int i = 0; i < 5; i++) {
+            assertThatThrownBy(() -> authService.changeOwnPassword(principal(),
+                    new ChangePasswordRequest("Wrong@1234", "N3w-Staff-Pass")))
+                    .isInstanceOf(FieldValidationException.class);
+        }
+
+        assertThatThrownBy(() -> authService.changeOwnPassword(principal(),
+                new ChangePasswordRequest("Old@12345", "N3w-Staff-Pass")))
+                .isInstanceOfSatisfying(TooManyLoginAttemptsException.class,
+                        ex -> assertThat(ex.getRetryAfterSeconds()).isEqualTo(900));
+        verify(passwordEncoder, never()).matches(eq("Old@12345"), any());
+        assertThat(user.getPasswordHash()).isEqualTo("hash");
+        assertThatThrownBy(() -> authService.login(new LoginRequest("officer@stark.local", "Old@12345"), IP))
+                .as("the same e-mail lock as for login").isInstanceOf(TooManyLoginAttemptsException.class);
+    }
+
+    @Test
+    void aCorrectCurrentPasswordClearsEarlierWrongOnes() {
+        User user = user("officer@stark.local");
+        when(userRepository.findById(7L)).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("Wrong@1234", "hash")).thenReturn(false);
+        when(passwordEncoder.matches("Old@12345", "hash")).thenReturn(true);
+        when(passwordEncoder.encode("N3w-Staff-Pass")).thenReturn("new-hash");
+        when(passwordEncoder.matches("Wrong@1234", "new-hash")).thenReturn(false);
+        for (int i = 0; i < 4; i++) {
+            assertThatThrownBy(() -> authService.changeOwnPassword(principal(),
+                    new ChangePasswordRequest("Wrong@1234", "N3w-Staff-Pass")))
+                    .isInstanceOf(FieldValidationException.class);
+        }
+
+        authService.changeOwnPassword(principal(), new ChangePasswordRequest("Old@12345", "N3w-Staff-Pass"));
+
+        for (int i = 0; i < 4; i++) {
+            assertThatThrownBy(() -> authService.changeOwnPassword(principal(),
+                    new ChangePasswordRequest("Wrong@1234", "N3w-Staff-Pass")))
+                    .isInstanceOf(FieldValidationException.class);
+        }
+        assertThat(loginAttemptService.remainingLock("officer@stark.local", IP)).as("count restarted at 0")
+                .isZero();
+    }
+
+    private static AuthenticatedUser principal() {
+        return new AuthenticatedUser(7L, "officer@stark.local", Role.STAFF);
+    }
+
     private static User user(String email) {
         User user = new User(email, "hash", "Officer", Role.STAFF);
         ReflectionTestUtils.setField(user, "id", 7L);
+        ReflectionTestUtils.setField(user, "version", 0L);
         return user;
     }
 }

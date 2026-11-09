@@ -1,89 +1,83 @@
-# Architecture Decision Records — Stark VMS v1.0 (Assignment 1)
+# Architecture Decision Records — Stark VMS v2.0 (Assignment 2)
 
-This folder holds the significant architecture decisions of Stark VMS v1.0, one Markdown file per decision. The
-format is Michael Nygard's, with the MADR sections "Alternatives considered" and "Related"
+This folder records the significant architecture decisions of Stark VMS, one Markdown file per decision, in the
+Michael Nygard format with the MADR sections "Alternatives considered" and "Related"
 ([0001](0001-record-architecture-decisions.md)).
 
-> **ADRs 0001–0021 were written after the code.**
-> - v1.0 was designed and built first.
-> - On 2026-11-07 the ADRs were reconstructed from the code, the READMEs and the API contract.
-> - Each one says "Recorded: retroactively" in its header.
-> - They describe the system as it is. They are not proof that it was designed up front.
+> **ADRs 0001–0021 were written after the code.** v1.0 and v2.0 were designed and built first; those ADRs were
+> reconstructed from the code, the READMEs and the API contract on 2026-11-07, and every one says
+> "Recorded: retroactively" in its header. They explain the system as it is; they are not proof of up-front
+> design.
 >
-> **From now on, a significant decision gets an ADR *before* it is implemented.**
-> - Copy [`template.md`](template.md) and set `Status: Proposed`.
-> - Open it with the pull request, or before it, and set it to `Accepted` when the change is merged.
-> - "Significant" means any of these:
->   - a new dependency or external service;
->   - a new bounded context, or a change in who owns a table;
->   - an API contract change that is not purely additive;
->   - a security or data-retention rule;
->   - anything that is hard to undo.
-> - An accepted ADR is never rewritten. A new ADR supersedes it.
+> **ADRs 0022–0024 (v2.1 hardening) were written before implementation**, on 2026-11-07, and say
+> "Recorded: before implementation" in their header. They were implemented on 2026-11-08 (v2.1); a security review
+> the same day led to an **"Amendment after the security review"** section in 0022 and 0024 (client IP from the
+> right-most proxy-added entry, attempts reserved before the password check, locks never evicted, log-safe keys,
+> millisecond token cut-off, tokens revoked on disable via migration V8, wrong current passwords throttled). Their
+> "Files (planned)" lists are the intended change; the amendments name the real files and tests.
 >
-> **ADRs 0022–0023 (v1.1 hardening) were written before implementation**, on 2026-11-07, and say
-> "Recorded: before implementation" in their header. They were **implemented on 2026-11-08**; each ADR ends with an
-> "Implementation" section that lists the files and tests (the decisions themselves are unchanged).
+> **From now on, every significant decision gets an ADR *before* it is implemented.** Copy
+> [`template.md`](template.md), set `Status: Proposed`, open it with (or before) the pull request, and change it
+> to `Accepted` when the change is merged. "Significant" means: a new dependency or external service, a new
+> bounded context or a change of table ownership, an API contract change that is not purely additive, a security
+> or data-retention rule, or anything hard to undo. An accepted ADR is never rewritten; a new ADR supersedes it.
 
-The numbers match the ADRs of Assignment 2 (v2.0, `assignment 2/docs/adr/`), so the same decision has the same
-number in both folders. The gaps are deliberate. These decisions exist only in v2.0:
-- 0012 delete policy BR-10;
-- 0013 document storage;
-- 0014 driver–vehicle assignment;
-- 0017 user-management scope;
-- 0018 accepted deviations;
-- 0019 dashboard read model;
-- 0024 ADMIN user management (v2.1; v1.0 keeps the user-management gap described in its 0007).
-
-The ADRs 0001–0021 here describe only v1.0 code. 0022 and 0023 are the same decisions as in Assignment 2, adapted
-to v1.0 (0023 covers vehicles only).
+The numbers match the ADRs of Assignment 1 (`../../../assignment 1/docs/adr/`): the same decision has the same
+number in both folders. ADRs marked **new in v2.0** do not exist in Assignment 1; ADRs marked **extended in v2.0**
+exist there with the v1.0 scope.
 
 ## Index
 
-| No. | Decision | Status |
-|---|---|---|
-| [0001](0001-record-architecture-decisions.md) | Record architecture decisions (this process) | Accepted |
-| [0002](0002-bounded-contexts-and-package-by-feature.md) | Bounded contexts and package-by-feature (`auth`, `vehicle`; `auth`, `vehicles`, `dashboard`) | Accepted |
-| [0003](0003-data-ownership-and-cross-context-contracts.md) | Data ownership and cross-context contracts (`docs/API_CONTRACT.md`, DTOs at the edges) | Accepted |
-| [0004](0004-frontend-state-management-with-riverpod.md) | Frontend state management with Riverpod (session, change counter, router guard) | Accepted |
-| [0005](0005-layered-architecture-and-solid-conventions.md) | Layered architecture and SOLID conventions | Accepted |
-| [0006](0006-postgresql-everywhere-flyway-and-validate.md) | PostgreSQL everywhere, Flyway, `ddl-auto=validate`, embedded PostgreSQL for tests | Accepted |
-| [0007](0007-authentication-stateless-jwt.md) | Authentication: stateless JWT, BCrypt, roles with `@PreAuthorize` (incl. the user-management gap) | Accepted |
-| [0008](0008-error-format-problem-details.md) | Error format: RFC 9457 Problem Details everywhere | Accepted |
-| [0009](0009-vehicle-number-normalization-and-duplicate-check.md) | Vehicle number normalization and duplicate check (service + DB constraint) | Accepted |
-| [0010](0010-server-side-pagination-filtering-sorting.md) | Server-side pagination, search and sorting | Accepted |
-| [0011](0011-time-and-expiry-with-injected-clock.md) | Time: one injected `Clock` in Asia/Dhaka (JWT, audit, manufacture-year bound) | Accepted |
-| [0015](0015-non-functional-requirements-strategy.md) | Non-functional requirements strategy (v1.0 scope) | Accepted |
-| [0016](0016-deployment-render-and-netlify.md) | Deployment: Render (Docker) and Netlify, configuration only via environment variables | Accepted |
-| [0020](0020-test-strategy-and-ci.md) | Test strategy and continuous integration | Accepted |
-| [0021](0021-demo-data-seeded-into-the-real-database.md) | Demo data seeded into the real database (local profile only) | Accepted |
-| [0022](0022-login-throttling.md) | Login throttling: in-memory failure counters per e-mail and per IP, 429 with `Retry-After` | Accepted — **written before implementation** (v1.1), implemented 2026-11-08, **amended** after the security review of 2026-11-08 (client IP from the right-most proxy-added entry, attempts reserved before the password check, locks never evicted, log-safe keys) |
-| [0023](0023-optimistic-locking.md) | Optimistic locking: `version` on vehicles, required in `PUT /vehicles/{id}`, 409 `stale-version` | Accepted — **written before implementation** (v1.1), implemented 2026-11-08 |
+| No. | Decision | Status | In v1.0 (Assignment 1)? |
+|---|---|---|---|
+| [0001](0001-record-architecture-decisions.md) | Record architecture decisions (this process) | Accepted | yes |
+| [0002](0002-bounded-contexts-and-package-by-feature.md) | Bounded contexts and package-by-feature | Accepted | extended in v2.0 (5 new contexts) |
+| [0003](0003-data-ownership-and-cross-context-contracts.md) | Data ownership and cross-context contracts | Accepted | extended in v2.0 (cross-context rules, `VehicleUsage`) |
+| [0004](0004-frontend-state-management-with-riverpod.md) | Frontend state management with Riverpod | Accepted | extended in v2.0 (more counters and query controllers) |
+| [0005](0005-layered-architecture-and-solid-conventions.md) | Layered architecture and SOLID conventions | Accepted | extended in v2.0 (`StorageService`, `VehicleUsage`) |
+| [0006](0006-postgresql-everywhere-flyway-and-validate.md) | PostgreSQL everywhere, Flyway, `ddl-auto=validate`, embedded PostgreSQL for tests | Accepted | yes (V1–V2; v2.0 adds V3–V6) |
+| [0007](0007-authentication-stateless-jwt.md) | Authentication: stateless JWT, BCrypt, roles with `@PreAuthorize` | Accepted (v2.1 closing notes → 0022, 0024) | yes |
+| [0008](0008-error-format-problem-details.md) | Error format: RFC 9457 Problem Details everywhere | Accepted | yes (v2.0 adds its error types) |
+| [0009](0009-vehicle-number-normalization-and-duplicate-check.md) | Vehicle number normalization and duplicate check (service + DB constraint) | Accepted | yes (v2.0 reuses it for drivers) |
+| [0010](0010-server-side-pagination-filtering-sorting.md) | Server-side pagination, filtering and sorting | Accepted | extended in v2.0 (filters, more lists) |
+| [0011](0011-time-and-expiry-with-injected-clock.md) | Time and expiry: injected `Clock` in Asia/Dhaka, expiry computed not stored | Accepted | partly (v1.0: Clock for JWT, audit, year bound; expiry is new in v2.0) |
+| [0012](0012-delete-policy-br-10.md) | Delete policy BR-10: hard delete only without history, INACTIVE instead | Accepted | **new in v2.0** |
+| [0013](0013-document-file-storage-behind-storageservice.md) | Document file storage behind `StorageService` (DB `BYTEA` default, Supabase optional) | Accepted | **new in v2.0** |
+| [0014](0014-driver-vehicle-assignment-model.md) | Driver–vehicle assignment model: history table, partial unique indexes, row locks | Accepted | **new in v2.0** |
+| [0015](0015-non-functional-requirements-strategy.md) | Non-functional requirements strategy | Accepted (updated 2026-11-08: throttling, optimistic locking and user management closed by 0022–0024) | extended in v2.0 (v2.0 scope and findings) |
+| [0016](0016-deployment-render-and-netlify.md) | Deployment: Render (Docker) and Netlify, configuration only via environment variables | Accepted | yes (v2.0 adds the storage variables) |
+| [0017](0017-user-account-management-scope.md) | User account management: accounts from start-up configuration only (known gap) | Superseded by [0024](0024-admin-user-management.md) | **new in v2.0** as an ADR (the same gap exists in v1.0 and is noted in its 0007) |
+| [0018](0018-accepted-deviations-from-the-guideline.md) | Accepted deviations from the guideline | Accepted | **new in v2.0** |
+| [0019](0019-dashboard-as-a-read-model.md) | Dashboard as a read model: one summary endpoint, aggregate queries, one snapshot | Accepted | **new in v2.0** |
+| [0020](0020-test-strategy-and-ci.md) | Test strategy and continuous integration | Accepted | yes (v2.0 adds the performance test and more suites) |
+| [0021](0021-demo-data-seeded-into-the-real-database.md) | Demo data seeded into the real database (local profile only) | Accepted | yes (v1.0 seeds vehicles only) |
+| [0022](0022-login-throttling.md) | Login throttling: in-memory failure counters per e-mail and per IP, 429 with `Retry-After` | Accepted — **written before implementation** (v2.1), implemented 2026-11-08, **amended** after the security review | yes (same decision and amendment, v1.1) |
+| [0023](0023-optimistic-locking.md) | Optimistic locking: `version` on vehicles, drivers, maintenance records and users, required in every PUT, 409 `stale-version` | Accepted — **written before implementation** (v2.1), implemented 2026-11-08 | yes (vehicles only, v1.1) |
+| [0024](0024-admin-user-management.md) | ADMIN user management, own password change, tokens checked against the current user (supersedes 0017) | Accepted — **written before implementation** (v2.1), implemented 2026-11-08, **amended** after the security review | **new in v2.1** (not in v1.0) |
 
 ## Reading order
 
-- **New to the code:** read 0002, then 0003, 0005 and 0004.
-- **Reviewing the duplicate rule:** read 0009, then 0008.
-- **Reviewing quality and risk:** read 0015.
-- **Reviewing the v1.1 hardening:** read 0022 (NFR-SEC-01) and 0023 (NFR-REL-01), then `../API_CONTRACT.md`
-  Section 6.
+- **New to the code:** 0002 → 0003 → 0005 → 0004.
+- **Reviewing a feature:** the feature's own ADR (0009, 0012, 0013, 0014, 0019), then 0008 and 0010.
+- **Reviewing quality and risk:** 0015 (every NFR with evidence and known gaps), then 0017 and 0018.
+- **Reviewing the v2.1 hardening:** 0022 (NFR-SEC-01), 0023 (NFR-REL-01), 0024 (supersedes 0017) — including the
+  "Amendment after the security review" sections of 0022 and 0024 — then `../API_CONTRACT.md` Section 7.
 
 ## Conventions
 
-- File names are `NNNN-kebab-case-title.md`. Numbers are never reused.
-- Status values are `Proposed`, `Accepted`, `Rejected`, `Deprecated` and `Superseded by NNNN`.
-- Paths are relative to the assignment folder. Short prefixes are explained at the end of each ADR:
-  - `BE/` = `stark-vms-backend/src/main/java/com/starkgroup/vms/`;
-  - `MIG/` = `stark-vms-backend/src/main/resources/db/migration/`;
-  - `FE/` = `stark-vms-frontend/lib/`.
-- Finding IDs such as `NFR-SEC-01` refer to the architecture and NFR review of 2026-11-07.
+- File name `NNNN-kebab-case-title.md`; numbers are never reused.
+- Status values: `Proposed`, `Accepted`, `Rejected`, `Deprecated`, `Superseded by NNNN`.
+- Paths in the ADRs are relative to the assignment folder. Short prefixes are explained at the end of each ADR:
+  `BE/` = `stark-vms-backend/src/main/java/com/starkgroup/vms/`,
+  `MIG/` = `stark-vms-backend/src/main/resources/db/migration/`, `FE/` = `stark-vms-frontend/lib/`.
+- Finding IDs such as `SOLID-BE-03` or `NFR-SEC-01` refer to the architecture and NFR review of 2026-11-07. The
+  ones still open are listed in [0015](0015-non-functional-requirements-strategy.md) and in the ADR they belong to.
 
 ## Related documents
 
-- [`../API_CONTRACT.md`](../API_CONTRACT.md): the frontend/backend contract (Section 6 is the v1.1
-  hardening of 0022–0023, implemented 2026-11-08).
-- [`../ER_DIAGRAM.md`](../ER_DIAGRAM.md): `users` and `vehicles` (migrations V1, V2 and V2_1).
-- [`../PERFORMANCE.md`](../PERFORMANCE.md): measured performance, used by 0010 and 0015.
+- [`../API_CONTRACT.md`](../API_CONTRACT.md): the frontend/backend contract (Section 6 is v2.0, Section 7 is the
+  planned v2.1 hardening of 0022–0024).
+- [`../ER_DIAGRAM.md`](../ER_DIAGRAM.md): all tables of migrations V1–V6.
+- [`../PERFORMANCE.md`](../PERFORMANCE.md): measured performance (used by 0010, 0015, 0019).
 - [`../../stark-vms-backend/README.md`](../../README.md) and
-  [`../../stark-vms-frontend/README.md`](https://github.com/AvishekBis/stark-vms-frontend/blob/main/README.md): their "Decisions and trade-offs" sections
-  summarise these ADRs.
+  [`../../stark-vms-frontend/README.md`](https://github.com/AvishekBis/stark-vms-frontend/blob/main/README.md): "Decisions and trade-offs" summaries.

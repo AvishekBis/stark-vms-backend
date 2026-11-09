@@ -4,6 +4,7 @@ import java.io.IOException;
 
 import javax.sql.DataSource;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.PropertySource;
@@ -14,8 +15,9 @@ import com.zaxxer.hikari.HikariDataSource;
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
 
 /**
- * Starts a real PostgreSQL server from bundled binaries on port {@value #PORT} and points the
- * application at it. Data lives in a temporary directory and is recreated (and re-seeded) on
+ * Starts a real PostgreSQL server from bundled binaries on port {@value #DEFAULT_PORT} (override with the
+ * {@code LOCAL_PG_PORT} environment variable / property, e.g. to run two instances side by side) and points
+ * the application at it. Data lives in a temporary directory and is recreated (and re-seeded) on
  * every start. Local-only default values (JWT secret, demo accounts) come from
  * local-embedded.properties; real environment variables still win.
  */
@@ -23,13 +25,14 @@ import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
 @PropertySource("classpath:local-embedded.properties")
 public class LocalEmbeddedPostgresConfig {
 
-    static final int PORT = 5433;
+    static final int DEFAULT_PORT = 5433;
     private static final String DATABASE = "postgres";
     private static final String USER = "postgres";
 
     @Bean(destroyMethod = "close")
-    public EmbeddedPostgres embeddedPostgres() throws IOException {
-        return EmbeddedPostgres.builder().setPort(PORT).start();
+    public EmbeddedPostgres embeddedPostgres(@Value("${LOCAL_PG_PORT:" + DEFAULT_PORT + "}") int port)
+            throws IOException {
+        return EmbeddedPostgres.builder().setPort(port).start();
     }
 
     @Bean(destroyMethod = "close")

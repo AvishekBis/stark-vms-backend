@@ -13,7 +13,9 @@ import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -30,6 +32,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -38,12 +41,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.starkgroup.vms.support.ApiTestSupport;
+import com.starkgroup.vms.support.FleetApi;
 
 import io.zonky.test.db.AutoConfigureEmbeddedDatabase;
 import jakarta.servlet.RequestDispatcher;
 
 /**
- * Vehicle API against a real (embedded) PostgreSQL with the Flyway schema: FR-V01..FR-V05, TC-01..TC-07, TC-11.
+ * Vehicle API against a real (embedded) PostgreSQL with the Flyway schema: FR-V01..FR-V05, TC-01..TC-07, TC-11,
+ * and v2.0 FR-V07 (status), FR-V08 (search), FR-V09 (filters) and BR-10 (delete guard).
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -69,7 +74,7 @@ class VehicleApiTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        jdbcTemplate.update("DELETE FROM vehicles");
+        ApiTestSupport.cleanDatabase(jdbcTemplate);
         adminToken = ApiTestSupport.adminToken(mockMvc);
         staffToken = ApiTestSupport.staffToken(mockMvc);
     }
@@ -91,7 +96,6 @@ class VehicleApiTest {
                 .andExpect(jsonPath("$.createdAt").isString())
                 .andExpect(jsonPath("$.updatedAt").isString())
                 .andExpect(jsonPath("$.createdBy").value(ApiTestSupport.STAFF_EMAIL))
-                .andExpect(jsonPath("$.version").value(0))
                 .andExpect(jsonPath("$.numberKey").doesNotExist())
                 .andReturn();
         long id = ApiTestSupport.readJson(result).get("id").asLong();
@@ -177,7 +181,6 @@ class VehicleApiTest {
                 .andExpect(jsonPath("$.vehicleNumber").value("DHK-1234"))
                 .andExpect(jsonPath("$.model").value("Premio"))
                 .andExpect(jsonPath("$.color").value("Black"))
-                .andExpect(jsonPath("$.version").value(1))
                 .andExpect(jsonPath("$.createdAt").value(created.get("createdAt").asText()))
                 .andExpect(jsonPath("$.updatedAt").value(not(created.get("updatedAt").asText())));
 
@@ -429,6 +432,133 @@ class VehicleApiTest {
                         .header(HttpHeaders.ORIGIN, "https://evil.example")
                         .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "GET"))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void frV07_adminChangesStatusAndStaffGets403() throws Exception {
+        long id = createVehicle("DHK-1234").get("id").asLong();
+
+        mockMvc.perform(patch(VEHICLES + "/" + id + "/status").header(HttpHeaders.AUTHORIZATION, adminToken)
+                        .contentType(MediaType.APPLICATION_JSON).content(statusJson("MAINTENANCE")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(id))
+                .andExpect(jsonPath("$.status").value("MAINTENANCE"));
+        mockMvc.perform(patch(VEHICLES + "/" + id + "/status").header(HttpHeaders.AUTHORIZATION, adminToken)
+                        .contentType(MediaType.APPLICATION_JSON).content(statusJson("MAINTENANCE")))
+                .andExpect(status().isOk());
+        mockMvc.perform(patch(VEHICLES + "/" + id + "/status").header(HttpHeaders.AUTHORIZATION, staffToken)
+                        .contentType(MediaType.APPLICATION_JSON).content(statusJson("ACTIVE")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.type").value("https://stark-vms/errors/forbidden"));
+        mockMvc.perform(get(VEHICLES + "/" + id).header(HttpHeaders.AUTHORIZATION, staffToken))
+                .andExpect(jsonPath("$.status").value("MAINTENANCE"));
+    }
+
+    @Test
+    void frV07_invalidOrMissingStatusIs400AndUnknownVehicle404() throws Exception {
+        long id = createVehicle("DHK-1234").get("id").asLong();
+
+        mockMvc.perform(patch(VEHICLES + "/" + id + "/status").header(HttpHeaders.AUTHORIZATION, adminToken)
+                        .contentType(MediaType.APPLICATION_JSON).content(statusJson("SCRAPPED")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("status"));
+        mockMvc.perform(patch(VEHICLES + "/" + id + "/status").header(HttpHeaders.AUTHORIZATION, adminToken)
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("status"));
+        mockMvc.perform(patch(VEHICLES + "/999999/status").header(HttpHeaders.AUTHORIZATION, adminToken)
+                        .contentType(MediaType.APPLICATION_JSON).content(statusJson("ACTIVE")))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void frV08_searchMatchesBrandModelAndCurrentDriverName() throws Exception {
+        createVehicle(vehicleJson("DHK-1111").put("brand", "Honda").put("model", "Grace"));
+        createVehicle(vehicleJson("DHK-2222").put("brand", "Toyota").put("model", "Premio"));
+        long hiace = createVehicle(vehicleJson("CTG-3333").put("brand", "Toyota").put("model", "Hiace"))
+                .get("id").asLong();
+        long driver = FleetApi.createDriver(mockMvc, staffToken, "Shahin Alam", "01811000009", "DK9");
+        FleetApi.assign(mockMvc, staffToken, hiace, driver);
+
+        assertSearch("honda", "DHK-1111");
+        assertSearch("PREM", "DHK-2222");
+        assertSearch("shahin", "CTG-3333");
+        assertSearch("ALAM", "CTG-3333");
+        mockMvc.perform(get(VEHICLES).param("search", "toyota").param("sort", "vehicleNumber,asc")
+                        .header(HttpHeaders.AUTHORIZATION, staffToken))
+                .andExpect(jsonPath("$.content[*].vehicleNumber", contains("CTG-3333", "DHK-2222")));
+
+        // A closed assignment no longer matches the driver's name.
+        mockMvc.perform(delete(VEHICLES + "/" + hiace + "/driver").header(HttpHeaders.AUTHORIZATION, staffToken))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get(VEHICLES).param("search", "shahin").header(HttpHeaders.AUTHORIZATION, staffToken))
+                .andExpect(jsonPath("$.totalElements").value(0));
+    }
+
+    @Test
+    void frV09_statusAndTypeFiltersAreAndedWithSearch() throws Exception {
+        createVehicle(vehicleJson("DHK-1").put("vehicleType", "BUS"));
+        long bus2 = createVehicle(vehicleJson("DHK-2").put("vehicleType", "BUS")).get("id").asLong();
+        createVehicle(vehicleJson("CTG-3").put("vehicleType", "TRUCK"));
+        FleetApi.changeStatus(mockMvc, adminToken, bus2, "MAINTENANCE");
+
+        mockMvc.perform(get(VEHICLES).param("type", "BUS").param("sort", "vehicleNumber,asc")
+                        .header(HttpHeaders.AUTHORIZATION, staffToken))
+                .andExpect(jsonPath("$.totalElements").value(2))
+                .andExpect(jsonPath("$.content[*].vehicleNumber", contains("DHK-1", "DHK-2")));
+        mockMvc.perform(get(VEHICLES).param("type", "BUS").param("status", "MAINTENANCE")
+                        .header(HttpHeaders.AUTHORIZATION, staffToken))
+                .andExpect(jsonPath("$.content[*].vehicleNumber", contains("DHK-2")));
+        mockMvc.perform(get(VEHICLES).param("status", "ACTIVE").param("search", "ctg")
+                        .header(HttpHeaders.AUTHORIZATION, staffToken))
+                .andExpect(jsonPath("$.content[*].vehicleNumber", contains("CTG-3")));
+        mockMvc.perform(get(VEHICLES).param("status", "INACTIVE").header(HttpHeaders.AUTHORIZATION, staffToken))
+                .andExpect(jsonPath("$.totalElements").value(0));
+        mockMvc.perform(get(VEHICLES).param("status", "BROKEN").header(HttpHeaders.AUTHORIZATION, staffToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
+        mockMvc.perform(get(VEHICLES).param("type", "PLANE").header(HttpHeaders.AUTHORIZATION, staffToken))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void br10_vehicleWithHistoryCannotBeDeleted() throws Exception {
+        long withMaintenance = createVehicle("DHK-1111").get("id").asLong();
+        FleetApi.addMaintenance(mockMvc, staffToken, withMaintenance, FleetApi.today(), "100.00");
+        long withClosedAssignment = createVehicle("DHK-2222").get("id").asLong();
+        long driver = FleetApi.createDriver(mockMvc, staffToken, "Rahim Uddin", "01711000001", "DK1");
+        FleetApi.assign(mockMvc, staffToken, withClosedAssignment, driver);
+        mockMvc.perform(delete(VEHICLES + "/" + withClosedAssignment + "/driver")
+                        .header(HttpHeaders.AUTHORIZATION, staffToken))
+                .andExpect(status().isNoContent());
+        long withDocument = createVehicle("DHK-3333").get("id").asLong();
+        mockMvc.perform(multipart(VEHICLES + "/" + withDocument + "/documents")
+                        .file(new MockMultipartFile("file", "a.pdf", "application/pdf", "%PDF-1.4".getBytes()))
+                        .param("documentType", "REGISTRATION")
+                        .param("expiryDate", FleetApi.today().plusYears(1).toString())
+                        .header(HttpHeaders.AUTHORIZATION, staffToken))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(delete(VEHICLES + "/" + withMaintenance).header(HttpHeaders.AUTHORIZATION, adminToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.type").value("https://stark-vms/errors/vehicle-has-history"))
+                .andExpect(jsonPath("$.title").value("Vehicle has history"))
+                .andExpect(jsonPath("$.detail").value("Vehicle DHK-1111 has documents, maintenance or driver "
+                        + "history and cannot be deleted. Set its status to INACTIVE instead."));
+        for (long id : new long[] {withClosedAssignment, withDocument}) {
+            mockMvc.perform(delete(VEHICLES + "/" + id).header(HttpHeaders.AUTHORIZATION, adminToken))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.type").value("https://stark-vms/errors/vehicle-has-history"));
+        }
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM vehicles", Integer.class)).isEqualTo(3);
+    }
+
+    private static String statusJson(String status) {
+        return "{\"status\":\"" + status + "\"}";
+    }
+
+    private JsonNode createVehicle(ObjectNode body) throws Exception {
+        return FleetApi.createVehicle(mockMvc, adminToken, body);
     }
 
     private void assertSearch(String term, String expectedNumber) throws Exception {

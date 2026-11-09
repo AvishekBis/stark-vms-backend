@@ -1,74 +1,107 @@
-# 0011. Time: one injected `Clock` in Asia/Dhaka
+# 0011. Time and expiry: injected `Clock` in Asia/Dhaka, expiry status computed, not stored
 
 - **Status:** Accepted
 - **Date:** 2026-11-07
-- **Recorded:** retroactively, after implementation (the decision itself was taken when v1.0 was built, for the JWT,
-  the audit timestamps and the manufacture-year bound)
+- **Recorded:** retroactively, after implementation (the decision itself was taken when v1.0 was built — `Clock`
+  for JWT, audit timestamps and the manufacture-year bound — and extended when v2.0 added expiry status, the
+  maintenance date rule and the dashboard month)
 
 ## Context
 
-Several v1.0 rules depend on "now":
-- token issue and expiry (FR-AUTH-02, about 60 minutes);
-- the audit timestamps `createdAt` and `updatedAt` (FR-X01);
-- the manufacture year "between 1980 and next year" (BR-03).
+Several rules depend on "now" or "today":
+- token expiry (FR-AUTH-02);
+- audit timestamps (FR-X01);
+- the manufacture year "between 1980 and next year" (BR-03);
+- document and licence expiry status (BR-08: EXPIRED if expiry < today, EXPIRING_SOON within 30 days, otherwise
+  VALID, with "today" in Asia/Dhaka);
+- "service date not in the future" (BR-09);
+- "maintenance this month" on the dashboard (FR-DB01).
 
-The Render server runs in UTC, and Dhaka is UTC+6, so "next year" changes at Dhaka's midnight on 31 December, not
-at UTC's. Guideline section 15 says: inject `java.time.Clock` and use `Clock.fixed(...)` in tests. The risk table
-names time-zone errors.
-
-v2.0 will add expiry status with "today" in Asia/Dhaka (BR-08). The expiry part of this decision ("computed, not
-stored") belongs to v2.0 and is recorded in Assignment 2's 0011.
+The Render server runs in UTC, and Dhaka is UTC+6, so between 00:00 and 06:00 Dhaka time the UTC date is still
+yesterday. Guideline section 15 says to inject `java.time.Clock` and use `Clock.fixed(...)` in tests. The risk
+table names "Timezone errors in expiry → wrong badges around midnight". Guideline 10.2 says "Expiry status is not
+stored — it is calculated from expiry_date, so it can never go stale".
 
 ## Decision
 
-- **One `Clock` bean.** `BE/config/ClockConfig.clock()` returns `Clock.system(ZoneId.of("Asia/Dhaka"))`, and
-  `ClockConfig.BUSINESS_ZONE` is the single constant for the business zone. No production code calls
+- **One `Clock` bean:** `BE/config/ClockConfig.clock()` returns `Clock.system(ZoneId.of("Asia/Dhaka"))`.
+  `ClockConfig.BUSINESS_ZONE` is the one constant for the business zone. No production code calls
   `LocalDate.now()`, `Instant.now()` or `Year.now()` without the clock.
-- **Who uses it:**
-  - `JwtService` sets issued-at and expiry, and the parser checks expiry against the same clock.
-  - `JpaAuditingConfig` provides a `DateTimeProvider` that returns `clock.instant()` truncated to microseconds,
-    which is the `TIMESTAMPTZ` precision. A response therefore shows exactly what was stored.
-  - `ManufactureYearValidator` uses `Year.now(clock)`. Spring's validator factory creates it, so the clock is
-    injected.
-- **How time is stored:** `hibernate.jdbc.time_zone: UTC`, and the timestamps are `TIMESTAMPTZ`. JSON timestamps
-  carry an offset (`docs/API_CONTRACT.md` header).
-- **Frontend.** `FE/core/utils/clock.dart` has `Clock` and `FixedClock` behind `clockProvider`. `AuthController` uses
-  it for session expiry, and the vehicle form uses it for the manufacture-year bound.
+- **Users of the clock:**
+  - `JwtService` sets issued-at and expiry, and the parser checks expiry with the same clock.
+  - `JpaAuditingConfig` provides a `DateTimeProvider` with `clock.instant()` truncated to microseconds, the
+    `TIMESTAMPTZ` precision.
+  - `ManufactureYearValidator` uses `Year.now(clock)`; it is created by Spring's validator factory, so the clock
+    is injected.
+  - `ValidationConfig` (v2.0) sets Bean Validation's `ClockProvider` to the same clock, so `@PastOrPresent` on
+    `MaintenanceRequest.serviceDate` means "not after today in Dhaka".
+  - `AssignmentService.now()` uses the clock truncated to microseconds, so a closed and a newly opened
+    assignment share one timestamp.
+- **Expiry status (v2.0):**
+  - `BE/common/expiry/ExpiryCalculator` computes `today()` as `LocalDate.now(clock.withZone(BUSINESS_ZONE))`,
+    whatever zone the clock has.
+  - It returns `ExpiryInfo(status, daysUntilExpiry)`: `days < 0` → EXPIRED, `0 ≤ days ≤ 30` → EXPIRING_SOON,
+    otherwise VALID (`EXPIRING_SOON_DAYS = 30`).
+  - The calculator is shared by `DocumentMapper` (FR-D02) and `DriverMapper` (licences, FR-X02).
+    `DocumentService.findExpiring` and `DashboardService` use the same `today()`.
+  - The status is computed at read time and **never stored**: there is no status column in V3 or V5.
+- **Storage of time:**
+  - `hibernate.jdbc.time_zone: UTC`; timestamps are `TIMESTAMPTZ`, and business dates (`expiry_date`,
+    `service_date`, `license_expiry`) are `DATE`.
+  - JSON timestamps carry an offset; dates are plain ISO dates (`docs/API_CONTRACT.md` header).
+- **Frontend:**
+  - `FE/core/utils/clock.dart` has `Clock`/`FixedClock` behind `clockProvider`, for session expiry, the
+    manufacture-year bound and date pickers.
+  - `FE/core/utils/dates.dart` has `Dates.businessToday(now)`, which is UTC + 6 h (Dhaka has no DST); the
+    maintenance form uses it.
+  - `ExpiryStatus.compute` mirrors BR-08 only as a fallback when the API value is missing. The server value
+    wins. That fallback reads `DateTime.now()` directly (`FE/shared/models/expiry_status.dart`), not `clockProvider`.
 - **Tests:**
-  - `ManufactureYearValidatorTest` checks the BR-03 bounds with a fixed Asia/Dhaka clock;
-  - `JwtServiceTest` checks expiry with fixed clocks;
-  - `auth_controller_test.dart` overrides `clockProvider` with a `FixedClock` for session expiry.
+  - unit tests use `Clock.fixed(...)`; `ExpiryCalculatorTest` covers "today in Dhaka with a UTC clock",
+    10 days, 0 days, 30 days, 31 days and yesterday;
+  - `MaintenanceRequestValidationTest` checks that tomorrow in Dhaka is rejected and that today in Dhaka, which
+    is still yesterday in UTC, is accepted;
+  - API tests use dates relative to Dhaka "today".
 
 ## Alternatives considered
 
 | Alternative | Why rejected |
 |---|---|
-| `Instant.now()` / `Year.now()` with the JVM default zone | Depends on the server (UTC on Render), and the tests would depend on the day they run. |
-| Set the container time zone (`TZ=Asia/Dhaka`) | Works only where it is configured, and still cannot be tested with a fixed instant. |
-| A `CHECK (manufacture_year <= EXTRACT(YEAR FROM CURRENT_DATE) + 1)` | `CURRENT_DATE` uses the database server's time zone, and a CHECK cannot use the injected clock. The DB keeps only the static lower bound `ck_vehicles_manufacture_year` (`>= 1980`). |
+| `LocalDate.now()` with the JVM default zone | Depends on the server (UTC on Render): badges would flip at 06:00 Dhaka time; tests would depend on the day they run. |
+| Set the JVM / container time zone to Asia/Dhaka (`TZ`) | Works only where it is configured; tests and developer machines differ; still not testable with a fixed instant. |
+| Store `expiry_status` and update it with a nightly job | Goes stale between runs; extra scheduler; guideline 10.2 says not to. |
+| Compute the status in SQL (`CASE WHEN expiry_date < CURRENT_DATE ...`) | `CURRENT_DATE` uses the database server's time zone, not Dhaka; logic would live in SQL and Java. |
+| Frontend computes the status from the browser date | The browser can be in any time zone; the server is the authority, the client only falls back. |
 
 ## Consequences
 
 **Positive**
-- Date logic is deterministic in tests.
-- v2.0 could build the expiry rules (BR-08, BR-09) on the same bean without changing v1.0 code.
+- Date rules are deterministic in tests and correct at midnight in Dhaka.
+- One place to change the business zone or the 30-day window.
 
 **Negative / accepted trade-offs**
-- Every class that needs "now" must take a `Clock` in its constructor. A direct `now()` call that someone forgets
-  is not caught by the build.
-- The frontend clock is the browser's clock, so near the new year the year bound can differ between the browser and
-  the server. The server's 400 field error then wins.
+- Every class that needs "now" must take a `Clock` (or `ExpiryCalculator`) in its constructor. A forgotten
+  direct `now()` call is not caught by the build.
+- The frontend date pickers for document and licence dates use the browser's calendar date
+  (`ref.watch(clockProvider).now()`). Only the maintenance form uses `Dates.businessToday`. Around midnight in
+  another time zone, the server may reject a date that the picker allowed; the server's field error is then shown
+  (`stark-vms-frontend/README.md`, Known limitations; that README bullet also names the maintenance service
+  date, although `maintenance_form_dialog.dart` uses `Dates.businessToday`).
+- `ExpiryCalculator` (in `common`) imports `config.ClockConfig` for the zone constant.
 
 **Follow-ups**
-- An architecture test that forbids calling `LocalDate.now()` or `Instant.now()` without arguments in `src/main`.
+- Use `Dates.businessToday` in every date picker that is checked against a server rule.
+- An architecture test that forbids `LocalDate.now()` / `Instant.now()` without arguments in `src/main`.
 
 ## Related
 
-- Guideline: sections 12 (BR-03), 15 ("Make date tests deterministic"), 21 (risk table), FR-AUTH-02, FR-X01.
-- ADRs: [0005](0005-layered-architecture-and-solid-conventions.md), [0006](0006-postgresql-everywhere-flyway-and-validate.md),
-  [0007](0007-authentication-stateless-jwt.md).
-- Files: `BE/config/ClockConfig.java`, `BE/config/JpaAuditingConfig.java`, `BE/auth/JwtService.java`,
-  `BE/common/validation/ManufactureYearValidator.java`, `FE/core/utils/clock.dart`,
-  `FE/features/auth/presentation/auth_controller.dart`, `FE/features/vehicles/presentation/vehicle_form_screen.dart`.
+- Guideline: sections 3.3, 10.2, 12 (BR-03, BR-08, BR-09), 15 ("Make date tests deterministic"), 21 (risk
+  table), FR-AUTH-02, FR-D02, FR-X01, FR-X02, FR-DB01, TC-08, TC-09.
+- ADRs: [0005](0005-layered-architecture-and-solid-conventions.md), [0018](0018-accepted-deviations-from-the-guideline.md) (BR-09 without DB CHECK).
+- Files: `BE/config/ClockConfig.java`, `BE/config/ValidationConfig.java`, `BE/config/JpaAuditingConfig.java`,
+  `BE/common/expiry/ExpiryCalculator.java`, `BE/common/validation/ManufactureYearValidator.java`,
+  `BE/auth/JwtService.java`, `BE/assignment/AssignmentService.java`, `BE/maintenance/dto/MaintenanceRequest.java`,
+  `FE/core/utils/clock.dart`, `FE/core/utils/dates.dart`, `FE/shared/models/expiry_status.dart`,
+  `docs/API_CONTRACT.md` §6.1.
 
 Path prefixes: `BE/` = `stark-vms-backend/src/main/java/com/starkgroup/vms/`, `FE/` = `stark-vms-frontend/lib/`.

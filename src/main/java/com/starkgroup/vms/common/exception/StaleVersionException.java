@@ -9,7 +9,7 @@ public class StaleVersionException extends RuntimeException {
     public static final String TITLE = "Record changed";
 
     /**
-     * @param recordNoun what changed, as the user calls it: "vehicle" (v1.1 has optimistic locking on vehicles only)
+     * @param recordNoun what changed, as the user calls it: "vehicle", "driver", "maintenance record", "user"
      */
     public StaleVersionException(String recordNoun) {
         super(messageFor(recordNoun));

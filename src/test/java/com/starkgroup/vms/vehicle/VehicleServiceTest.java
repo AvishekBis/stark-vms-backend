@@ -18,17 +18,19 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import com.starkgroup.vms.assignment.AssignmentService;
 import com.starkgroup.vms.common.dto.PageResponse;
 import com.starkgroup.vms.common.exception.ApiErrorType;
 import com.starkgroup.vms.common.exception.BadRequestException;
+import com.starkgroup.vms.common.exception.BusinessRuleException;
 import com.starkgroup.vms.common.exception.DuplicateResourceException;
 import com.starkgroup.vms.common.exception.NotFoundException;
 import com.starkgroup.vms.common.exception.StaleVersionException;
@@ -43,11 +45,18 @@ class VehicleServiceTest {
     @Mock
     private VehicleRepository vehicleRepository;
 
+    @Mock
+    private AssignmentService assignmentService;
+
+    @Mock
+    private VehicleUsage vehicleUsage;
+
     private VehicleService vehicleService;
 
     @BeforeEach
     void setUp() {
-        vehicleService = new VehicleService(vehicleRepository, new VehicleMapper());
+        vehicleService = new VehicleService(vehicleRepository, new VehicleMapper(), assignmentService,
+                List.of(id -> false, vehicleUsage));
     }
 
     @Test
@@ -104,7 +113,7 @@ class VehicleServiceTest {
     @Test
     void tc04_updateKeepingOwnNumberIsAllowed() {
         Vehicle existing = vehicle("DHK-1234");
-        when(vehicleRepository.findById(7L)).thenReturn(Optional.of(existing));
+        when(vehicleRepository.findForUpdateById(7L)).thenReturn(Optional.of(existing));
         when(vehicleRepository.existsByNumberKeyAndIdNot("DHK1234", 7L)).thenReturn(false);
         when(vehicleRepository.saveAndFlush(existing)).thenReturn(existing);
 
@@ -116,30 +125,36 @@ class VehicleServiceTest {
     }
 
     @Test
-    void adr0023_updateWithAnOlderVersionIsStaleAndChangesNothing() {
+    void adr0023_updateWithTheStoredVersionIsAccepted() {
         Vehicle existing = vehicle("DHK-1234");
-        when(vehicleRepository.findById(7L)).thenReturn(Optional.of(existing));
+        ReflectionTestUtils.setField(existing, "version", 3L);
+        when(vehicleRepository.findForUpdateById(7L)).thenReturn(Optional.of(existing));
+        when(vehicleRepository.saveAndFlush(existing)).thenReturn(existing);
 
-        assertThatThrownBy(() -> vehicleService.update(7L, updateRequest("CTG-9999", "Premio", 2L)))
+        VehicleResponse response = vehicleService.update(7L, updateRequest("DHK-1234", "Premio", 3L));
+
+        assertThat(response.model()).isEqualTo("Premio");
+        assertThat(response.version()).isEqualTo(3L);
+    }
+
+    @Test
+    void adr0023_updateWithAnOlderVersionIsRefusedBeforeAnythingChanges() {
+        Vehicle existing = vehicle("DHK-1234");
+        ReflectionTestUtils.setField(existing, "version", 4L);
+        when(vehicleRepository.findForUpdateById(7L)).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> vehicleService.update(7L, updateRequest("CTG-9999", "Premio", 3L)))
                 .isInstanceOf(StaleVersionException.class)
                 .hasMessage("This vehicle was changed by someone else since you opened it. Reload and try again.");
+        assertThat(existing.getModel()).isEqualTo("Axio");
         assertThat(existing.getVehicleNumber()).isEqualTo("DHK-1234");
-        assertThat(existing.getModel()).isNull();
         verify(vehicleRepository, never()).existsByNumberKeyAndIdNot(anyString(), any());
         verify(vehicleRepository, never()).saveAndFlush(any());
     }
 
     @Test
-    void adr0023_responseCarriesTheVersion() {
-        Vehicle existing = vehicle("DHK-1234");
-        when(vehicleRepository.findById(7L)).thenReturn(Optional.of(existing));
-
-        assertThat(vehicleService.findById(7L).version()).isEqualTo(3L);
-    }
-
-    @Test
     void br02_updateToAnotherVehiclesNumberIsRejected() {
-        when(vehicleRepository.findById(7L)).thenReturn(Optional.of(vehicle("DHK-1234")));
+        when(vehicleRepository.findForUpdateById(7L)).thenReturn(Optional.of(vehicle("DHK-1234")));
         when(vehicleRepository.existsByNumberKeyAndIdNot("CTG9999", 7L)).thenReturn(true);
 
         assertThatThrownBy(() -> vehicleService.update(7L, updateRequest("ctg 9999", "Axio")))
@@ -150,7 +165,7 @@ class VehicleServiceTest {
 
     @Test
     void updateOfMissingVehicleIsNotFound() {
-        when(vehicleRepository.findById(99L)).thenReturn(Optional.empty());
+        when(vehicleRepository.findForUpdateById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> vehicleService.update(99L, updateRequest("DHK-1", "Axio")))
                 .isInstanceOf(NotFoundException.class)
@@ -242,12 +257,59 @@ class VehicleServiceTest {
                 .containsExactly(Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
     }
 
+    @Test
+    void frV07_statusInactiveClosesTheCurrentAssignmentFirst() {
+        Vehicle existing = vehicle("DHK-1234");
+        when(vehicleRepository.findForUpdateById(7L)).thenReturn(Optional.of(existing));
+        when(vehicleRepository.saveAndFlush(existing)).thenReturn(existing);
+
+        VehicleResponse response = vehicleService.changeStatus(7L, VehicleStatus.INACTIVE);
+
+        verify(assignmentService).closeCurrentForVehicle(7L);
+        assertThat(response.status()).isEqualTo(VehicleStatus.INACTIVE);
+        assertThat(response.currentDriver()).isNull();
+    }
+
+    @Test
+    void frV07_statusMaintenanceKeepsTheDriver() {
+        Vehicle existing = vehicle("DHK-1234");
+        when(vehicleRepository.findForUpdateById(7L)).thenReturn(Optional.of(existing));
+        when(vehicleRepository.saveAndFlush(existing)).thenReturn(existing);
+
+        assertThat(vehicleService.changeStatus(7L, VehicleStatus.MAINTENANCE).status())
+                .isEqualTo(VehicleStatus.MAINTENANCE);
+        verify(assignmentService, never()).closeCurrentForVehicle(any());
+    }
+
+    @Test
+    void frV07_sameStatusAgainChangesNothing() {
+        when(vehicleRepository.findForUpdateById(7L)).thenReturn(Optional.of(vehicle("DHK-1234")));
+
+        assertThat(vehicleService.changeStatus(7L, VehicleStatus.ACTIVE).status()).isEqualTo(VehicleStatus.ACTIVE);
+        verify(vehicleRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void br10_vehicleWithHistoryCannotBeDeleted() {
+        when(vehicleRepository.findById(7L)).thenReturn(Optional.of(vehicle("DHK-1234")));
+        when(vehicleUsage.isUsedBy(7L)).thenReturn(true);
+
+        assertThatThrownBy(() -> vehicleService.delete(7L))
+                .isInstanceOfSatisfying(BusinessRuleException.class, ex -> {
+                    assertThat(ex.getType()).isEqualTo(ApiErrorType.VEHICLE_HAS_HISTORY);
+                    assertThat(ex.getTitle()).isEqualTo("Vehicle has history");
+                    assertThat(ex.getMessage()).isEqualTo("Vehicle DHK-1234 has documents, maintenance or driver "
+                            + "history and cannot be deleted. Set its status to INACTIVE instead.");
+                });
+        verify(vehicleRepository, never()).delete(any(Vehicle.class));
+    }
+
     private static CreateVehicleRequest createRequest(String number) {
         return new CreateVehicleRequest(number, VehicleType.CAR, " Toyota ", "Axio", 2019, "White", FuelType.OCTANE);
     }
 
     private static UpdateVehicleRequest updateRequest(String number, String model) {
-        return updateRequest(number, model, 3L);
+        return updateRequest(number, model, 0L);
     }
 
     private static UpdateVehicleRequest updateRequest(String number, String model, Long version) {
@@ -255,10 +317,11 @@ class VehicleServiceTest {
                 version);
     }
 
-    /** A loaded vehicle at version 3, as Hibernate would return it. */
+    /** A loaded vehicle: version 0, as after migration V7 or a first insert. */
     private static Vehicle vehicle(String number) {
         Vehicle vehicle = new Vehicle(number, VehicleNumber.normalize(number), VehicleType.CAR);
-        ReflectionTestUtils.setField(vehicle, "version", 3L);
+        vehicle.setModel("Axio");
+        ReflectionTestUtils.setField(vehicle, "version", 0L);
         return vehicle;
     }
 }

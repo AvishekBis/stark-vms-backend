@@ -10,7 +10,11 @@ server:
   # entry that is not such a proxy - the address Render's proxy appended - so client-added left-most entries and
   # the client-controlled RFC 7239 "Forwarded" header can no longer choose the IP key ("framework" trusted both).
   forward-headers-strategy: native
-  # gzip for JSON pages (up to 100 rows); small bodies such as the login response stay as they are.
+  tomcat:
+    # Read (and discard) the rest of an over-sized upload so the client receives the 413 Problem Details
+    # instead of a reset connection.
+    max-swallow-size: 20MB
+  # gzip for JSON pages (up to 100 rows) and the dashboard; small bodies and file downloads stay as they are.
   compression:
     enabled: true
     mime-types: application/json,application/problem+json
@@ -47,11 +51,18 @@ spring:
     deserialization:
       fail-on-unknown-properties: false
     default-property-inclusion: always
+  http:
+    client:
+      # Outgoing HTTP (Supabase storage) runs inside the upload/delete transaction: it must not hold a pooled
+      # DB connection and a request thread forever when the storage hangs.
+      connect-timeout: 5s
+      read-timeout: 30s
   mvc:
     problemdetails:
       enabled: true
   servlet:
     multipart:
+      # BR-07: 5 MB per file; the request may be a little larger (form fields). Above -> 413 file-too-large.
       max-file-size: 5MB
       max-request-size: 6MB
 
@@ -86,14 +97,23 @@ app:
     staff-email: ${APP_STAFF_EMAIL:}
     staff-password: ${APP_STAFF_PASSWORD:}
     staff-full-name: ${APP_STAFF_FULL_NAME:Fleet Officer}
-  # Login throttling (ADR 0022, contract 6.1): failed logins per e-mail / per client IP within the lockout
-  # window lock that e-mail / IP for the lockout. In memory, per instance; reset by a restart.
+  seed-demo-data: false
+  # Login throttling (ADR 0022, contract 7.1): in memory, per backend instance, reset by a restart.
+  # The lockout is also the window in which failures are counted. Values <= 0 stop the start-up.
   security:
     login:
       max-failures-per-email: ${APP_SECURITY_LOGIN_MAX_FAILURES_PER_EMAIL:5}
       max-failures-per-ip: ${APP_SECURITY_LOGIN_MAX_FAILURES_PER_IP:20}
       lockout: ${APP_SECURITY_LOGIN_LOCKOUT:15m}
-  seed-demo-data: false
+  # Uploaded document files (contract 6.5): "database" (default, table stored_files) or "supabase".
+  storage:
+    provider: ${APP_STORAGE_PROVIDER:database}
+    supabase:
+      url: ${SUPABASE_URL:}
+      service-key: ${SUPABASE_SERVICE_KEY:}
+      bucket: ${SUPABASE_BUCKET:vehicle-documents}
+      # Optional object-path prefix (e.g. "prod/") so dev and prod can share one bucket; empty locally.
+      key-prefix: ${APP_STORAGE_KEY_PREFIX:}
 
 logging:
   level:

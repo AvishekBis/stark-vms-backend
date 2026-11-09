@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Date;
 
 import javax.crypto.SecretKey;
@@ -27,6 +28,11 @@ public class JwtService {
     static final String ISSUER = "stark-vms";
     private static final String USER_ID_CLAIM = "uid";
     private static final String ROLE_CLAIM = "role";
+    /**
+     * Issue time in epoch milliseconds. JWT {@code iat} has whole seconds only, which let a token issued earlier
+     * in the same second as a password change survive it (review finding SEC-3, ADR 0024).
+     */
+    static final String ISSUED_AT_MILLIS_CLAIM = "iat_ms";
 
     private final SecretKey signingKey;
     private final Duration expiration;
@@ -48,12 +54,13 @@ public class JwtService {
     }
 
     public String generateToken(Long userId, String email, Role role) {
-        Instant issuedAt = clock.instant();
+        Instant issuedAt = clock.instant().truncatedTo(ChronoUnit.MILLIS);
         return Jwts.builder()
                 .issuer(ISSUER)
                 .subject(email)
                 .claim(USER_ID_CLAIM, userId)
                 .claim(ROLE_CLAIM, role.name())
+                .claim(ISSUED_AT_MILLIS_CLAIM, issuedAt.toEpochMilli())
                 .issuedAt(Date.from(issuedAt))
                 .expiration(Date.from(issuedAt.plus(expiration)))
                 .signWith(signingKey, Jwts.SIG.HS256)
@@ -65,9 +72,12 @@ public class JwtService {
     }
 
     /**
+     * Verifies signature, issuer and expiry. The role claim stays in the token for the client's information only:
+     * the effective role is read from the database on every request (ADR 0024, {@link TokenAuthenticator}).
+     *
      * @throws InvalidTokenException when the token cannot be trusted
      */
-    public AuthenticatedUser parse(String token) {
+    public TokenClaims parse(String token) {
         try {
             Claims claims = Jwts.parser()
                     .verifyWith(signingKey)
@@ -77,11 +87,15 @@ public class JwtService {
                     .parseSignedClaims(token)
                     .getPayload();
             Number userId = claims.get(USER_ID_CLAIM, Number.class);
-            String role = claims.get(ROLE_CLAIM, String.class);
-            if (userId == null || role == null || claims.getSubject() == null) {
+            Date issuedAt = claims.getIssuedAt();
+            if (userId == null || issuedAt == null || claims.getSubject() == null) {
                 throw new InvalidTokenException("The access token is invalid.", null);
             }
-            return new AuthenticatedUser(userId.longValue(), claims.getSubject(), Role.valueOf(role));
+            Number issuedAtMillis = claims.get(ISSUED_AT_MILLIS_CLAIM, Number.class);
+            Instant preciseIssuedAt = issuedAtMillis == null
+                    ? issuedAt.toInstant()
+                    : Instant.ofEpochMilli(issuedAtMillis.longValue());
+            return new TokenClaims(userId.longValue(), claims.getSubject(), preciseIssuedAt);
         } catch (ExpiredJwtException ex) {
             throw new InvalidTokenException("The access token has expired.", ex);
         } catch (JwtException | IllegalArgumentException ex) {

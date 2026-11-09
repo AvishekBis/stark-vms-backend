@@ -11,9 +11,9 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 /**
- * Body of PUT /api/v1/vehicles/{id} (FR-V03). Same fields and rules as {@link CreateVehicleRequest} plus the
- * required {@code version} of the vehicle as the client loaded it (ADR 0023, contract 6.2); status is not editable
- * here - it gets its own endpoint in v2.0 (FR-V07).
+ * Body of PUT /api/v1/vehicles/{id} (FR-V03). Same shape and rules as {@link CreateVehicleRequest} plus the
+ * required {@code version} of the vehicle as the client loaded it (ADR 0023); status is not editable here - it has
+ * its own endpoint (FR-V07).
  */
 public record UpdateVehicleRequest(
         @Schema(example = "DHAKA METRO-GA 11-2345")

@@ -1,12 +1,15 @@
 package com.starkgroup.vms.auth;
 
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.starkgroup.vms.auth.dto.ChangePasswordRequest;
 import com.starkgroup.vms.auth.dto.LoginRequest;
 import com.starkgroup.vms.auth.dto.LoginResponse;
 import com.starkgroup.vms.auth.dto.UserResponse;
@@ -21,7 +24,7 @@ import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/api/v1/auth")
-@Tag(name = "Auth", description = "Login and current user (FR-AUTH-01, FR-AUTH-02, ADR 0022)")
+@Tag(name = "Auth", description = "Login, current user and own password (FR-AUTH-01, FR-AUTH-02, ADR 0022, ADR 0024)")
 public class AuthController {
 
     private final AuthService authService;
@@ -57,5 +60,21 @@ public class AuthController {
     @ApiResponse(responseCode = "401", description = "Missing, invalid or expired token")
     public UserResponse me(@AuthenticationPrincipal AuthenticatedUser principal) {
         return authService.currentUser(principal);
+    }
+
+    @PutMapping("/me/password")
+    @Operation(summary = "Change your own password (any role)",
+            description = "The current token stops working; log in again with the new password.")
+    @ApiResponse(responseCode = "204", description = "Password changed")
+    @ApiResponse(responseCode = "400", description = "Wrong current password (field currentPassword) or the new "
+            + "password breaks the policy (8 characters to 72 bytes)")
+    @ApiResponse(responseCode = "401", description = "Missing, invalid or expired token")
+    @ApiResponse(responseCode = "429", description = "too-many-login-attempts: wrong current passwords count as "
+            + "failed logins of the e-mail (ADR 0022)",
+            headers = @Header(name = "Retry-After", description = "Seconds until the lock ends"))
+    public ResponseEntity<Void> changeOwnPassword(@AuthenticationPrincipal AuthenticatedUser principal,
+                                                  @Valid @RequestBody ChangePasswordRequest request) {
+        authService.changeOwnPassword(principal, request);
+        return ResponseEntity.noContent().build();
     }
 }
