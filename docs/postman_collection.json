@@ -1,0 +1,265 @@
+{
+  "info": {
+    "name": "Stark Group VMS API v1.1",
+    "description": "Manual smoke test of the Assignment 1 API (FR-AUTH-01, FR-V01..FR-V05, v1.1 optimistic locking ADR 0023). Run the requests top to bottom: Login stores the token, Create stores the vehicle id and version. Login throttling (ADR 0022) is not exercised here, so the demo accounts are never locked. Set baseUrl to http://localhost:8080 or the Render URL. Demo credentials are non-real local values.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "adminEmail", "value": "admin@stark.local" },
+    { "key": "adminPassword", "value": "Admin@12345" },
+    { "key": "staffEmail", "value": "staff@stark.local" },
+    { "key": "staffPassword", "value": "Staff@12345" },
+    { "key": "token", "value": "" },
+    { "key": "staffToken", "value": "" },
+    { "key": "vehicleId", "value": "" },
+    { "key": "vehicleNumber", "value": "" },
+    { "key": "vehicleVersion", "value": "" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "01 Login as ADMIN (FR-AUTH-01)",
+      "event": [{
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.test('200 OK with a bearer token', () => {",
+          "  pm.response.to.have.status(200);",
+          "  const body = pm.response.json();",
+          "  pm.expect(body.tokenType).to.eql('Bearer');",
+          "  pm.collectionVariables.set('token', body.accessToken);",
+          "});"
+        ] }
+      }],
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/v1/auth/login",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}" }
+      }
+    },
+    {
+      "name": "02 Login with wrong password -> 401 generic message",
+      "event": [{
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.test('401 with generic detail', () => {",
+          "  pm.response.to.have.status(401);",
+          "  pm.expect(pm.response.json().detail).to.eql('Invalid email or password.');",
+          "});"
+        ] }
+      }],
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/v1/auth/login",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"wrong-password\"\n}" }
+      }
+    },
+    {
+      "name": "03 Current user (FR-AUTH-02)",
+      "event": [{
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.test('200 with role', () => {",
+          "  pm.response.to.have.status(200);",
+          "  pm.expect(pm.response.json().role).to.eql('ADMIN');",
+          "});"
+        ] }
+      }],
+      "request": { "method": "GET", "url": "{{baseUrl}}/api/v1/auth/me" }
+    },
+    {
+      "name": "04 List vehicles (FR-V01)",
+      "event": [{
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.test('200 page wrapper', () => {",
+          "  pm.response.to.have.status(200);",
+          "  const body = pm.response.json();",
+          "  pm.expect(body).to.have.keys('content', 'page', 'size', 'totalElements', 'totalPages');",
+          "});"
+        ] }
+      }],
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/vehicles?page=0&size=20&sort=createdAt,desc&search=",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "vehicles"],
+          "query": [
+            { "key": "page", "value": "0" },
+            { "key": "size", "value": "20" },
+            { "key": "sort", "value": "createdAt,desc" },
+            { "key": "search", "value": "" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "05 List without token -> 401 (TC-06)",
+      "event": [{
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.test('401 Problem Details', () => pm.response.to.have.status(401));"
+        ] }
+      }],
+      "request": { "auth": { "type": "noauth" }, "method": "GET", "url": "{{baseUrl}}/api/v1/vehicles" }
+    },
+    {
+      "name": "06 Create vehicle -> 201 + Location (TC-01)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": { "type": "text/javascript", "exec": [
+            "const suffix = Math.floor(1000 + Math.random() * 9000);",
+            "pm.collectionVariables.set('vehicleNumber', 'DHK-' + suffix);"
+          ] }
+        },
+        {
+          "listen": "test",
+          "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 with Location', () => {",
+            "  pm.response.to.have.status(201);",
+            "  pm.response.to.have.header('Location');",
+            "  pm.collectionVariables.set('vehicleId', pm.response.json().id);",
+            "  pm.collectionVariables.set('vehicleVersion', pm.response.json().version);",
+            "});"
+          ] }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/v1/vehicles",
+        "body": { "mode": "raw", "raw": "{\n  \"vehicleNumber\": \"{{vehicleNumber}}\",\n  \"vehicleType\": \"CAR\",\n  \"brand\": \"Toyota\",\n  \"model\": \"Axio\",\n  \"manufactureYear\": 2019,\n  \"color\": \"White\",\n  \"fuelType\": \"OCTANE\"\n}" }
+      }
+    },
+    {
+      "name": "07 Create duplicate (other formatting) -> 409 (TC-02, TC-03)",
+      "event": [{
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.test('409 duplicate vehicle number', () => {",
+          "  pm.response.to.have.status(409);",
+          "  const body = pm.response.json();",
+          "  pm.expect(body.type).to.eql('https://stark-vms/errors/duplicate-vehicle-number');",
+          "  pm.expect(body.errors[0].field).to.eql('vehicleNumber');",
+          "});"
+        ] }
+      }],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/v1/vehicles",
+        "body": { "mode": "raw", "raw": "{\n  \"vehicleNumber\": \"{{vehicleNumber}}\",\n  \"vehicleType\": \"CAR\"\n}" }
+      }
+    },
+    {
+      "name": "08 Create without vehicle number -> 400 (TC-05)",
+      "event": [{
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.test('400 field error', () => {",
+          "  pm.response.to.have.status(400);",
+          "  pm.expect(pm.response.json().errors[0].field).to.eql('vehicleNumber');",
+          "});"
+        ] }
+      }],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/v1/vehicles",
+        "body": { "mode": "raw", "raw": "{\n  \"vehicleType\": \"CAR\"\n}" }
+      }
+    },
+    {
+      "name": "09 Edit vehicle keeping its number, with the loaded version -> 200 (TC-04, ADR 0023)",
+      "event": [{
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.test('200, model changed, version + 1', () => {",
+          "  pm.response.to.have.status(200);",
+          "  pm.expect(pm.response.json().model).to.eql('Premio');",
+          "  pm.expect(pm.response.json().version).to.eql(Number(pm.collectionVariables.get('vehicleVersion')) + 1);",
+          "});"
+        ] }
+      }],
+      "request": {
+        "method": "PUT",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/v1/vehicles/{{vehicleId}}",
+        "body": { "mode": "raw", "raw": "{\n  \"vehicleNumber\": \"{{vehicleNumber}}\",\n  \"vehicleType\": \"CAR\",\n  \"brand\": \"Toyota\",\n  \"model\": \"Premio\",\n  \"manufactureYear\": 2020,\n  \"color\": \"Black\",\n  \"fuelType\": \"OCTANE\",\n  \"version\": {{vehicleVersion}}\n}" }
+      }
+    },
+    {
+      "name": "09b Edit again with the old version -> 409 stale-version (ADR 0023)",
+      "event": [{
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.test('409 stale-version without errors[]', () => {",
+          "  pm.response.to.have.status(409);",
+          "  const body = pm.response.json();",
+          "  pm.expect(body.type).to.eql('https://stark-vms/errors/stale-version');",
+          "  pm.expect(body.title).to.eql('Record changed');",
+          "  pm.expect(body.errors).to.be.undefined;",
+          "});"
+        ] }
+      }],
+      "request": {
+        "method": "PUT",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/v1/vehicles/{{vehicleId}}",
+        "body": { "mode": "raw", "raw": "{\n  \"vehicleNumber\": \"{{vehicleNumber}}\",\n  \"vehicleType\": \"CAR\",\n  \"model\": \"Allion\",\n  \"version\": {{vehicleVersion}}\n}" }
+      }
+    },
+    {
+      "name": "10 Login as STAFF",
+      "event": [{
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.test('200', () => {",
+          "  pm.response.to.have.status(200);",
+          "  pm.collectionVariables.set('staffToken', pm.response.json().accessToken);",
+          "});"
+        ] }
+      }],
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/v1/auth/login",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{staffEmail}}\",\n  \"password\": \"{{staffPassword}}\"\n}" }
+      }
+    },
+    {
+      "name": "11 STAFF deletes vehicle -> 403 (TC-07)",
+      "event": [{
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+        ] }
+      }],
+      "request": {
+        "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{staffToken}}", "type": "string" }] },
+        "method": "DELETE",
+        "url": "{{baseUrl}}/api/v1/vehicles/{{vehicleId}}"
+      }
+    },
+    {
+      "name": "12 ADMIN deletes vehicle -> 204 (FR-V04)",
+      "event": [{
+        "listen": "test",
+        "script": { "type": "text/javascript", "exec": [
+          "pm.test('204 No Content', () => pm.response.to.have.status(204));"
+        ] }
+      }],
+      "request": { "method": "DELETE", "url": "{{baseUrl}}/api/v1/vehicles/{{vehicleId}}" }
+    }
+  ]
+}

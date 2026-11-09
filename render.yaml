@@ -1,0 +1,45 @@
+# Render Blueprint: backend web service (Docker) + managed PostgreSQL.
+# Secrets marked "sync: false" are entered in the Render dashboard, never committed.
+services:
+  - type: web
+    name: stark-vms-backend
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /actuator/health
+    autoDeploy: true
+    envVars:
+      # Render's connectionString starts with postgres:// - Spring needs jdbc:postgresql://host:port/db.
+      # Set DB_URL by hand in the dashboard (see README "Deploy to Render"), user and password come from the DB.
+      - key: DB_URL
+        sync: false
+      - key: DB_USERNAME
+        fromDatabase:
+          name: stark-vms-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: stark-vms-db
+          property: password
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRATION_MINUTES
+        value: "60"
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: APP_ADMIN_EMAIL
+        sync: false
+      - key: APP_ADMIN_PASSWORD
+        sync: false
+      - key: APP_STAFF_EMAIL
+        sync: false
+      - key: APP_STAFF_PASSWORD
+        sync: false
+
+databases:
+  - name: stark-vms-db
+    databaseName: vms
+    user: vms
+    plan: free
+    region: singapore

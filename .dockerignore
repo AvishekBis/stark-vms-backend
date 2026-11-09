@@ -1,0 +1,13 @@
+target/
+.git/
+.github/
+.idea/
+.vscode/
+docs/
+*.iml
+*.log
+.env
+.env.*
+application-local.yml
+application-local.example.yml
+README.md

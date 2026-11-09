@@ -1,0 +1,19 @@
+# Test profile: the DataSource is replaced by an embedded PostgreSQL (zonky), so Flyway
+# migrations and real SQL constraints are exercised. Test-only, non-real values.
+app:
+  jwt:
+    secret: test-only-jwt-secret-0123456789abcdef-0123456789abcdef
+    expiration-minutes: 60
+  cors:
+    allowed-origins: http://localhost:5000
+  bootstrap:
+    admin-email: admin@stark.local
+    admin-password: Admin@12345
+    staff-email: staff@stark.local
+    staff-password: Staff@12345
+  seed-demo-data: false
+
+logging:
+  level:
+    com.starkgroup.vms.common.web.RequestLoggingFilter: WARN
+    io.zonky: WARN
