@@ -1,5 +1,20 @@
 # Stark Group VMS — Backend
 
+> ### Stark Group VMS — one project, two repositories
+>
+> The fleet management system is split the way it is deployed, as the course guideline (Section 9)
+> asks. To see or run the whole thing you need both; to simply *use* it, open the live site.
+>
+> | Repository | What is in it |
+> |---|---|
+> | [`stark-vms-backend`](https://github.com/AvishekBis/stark-vms-backend) | Spring Boot 3.5 / Java 21 REST API, PostgreSQL, Flyway, JWT **(you are here)** |
+> | [`stark-vms-frontend`](https://github.com/AvishekBis/stark-vms-frontend) | Flutter Web client, Riverpod, go_router |
+>
+> **Live site:** <https://stark-vms-avishek.netlify.app> · **API:** <https://stark-vms-backend-i2i2.onrender.com/api/v1> · **API docs:** <https://stark-vms-backend-i2i2.onrender.com/swagger-ui.html>
+>
+> Demo logins and the whole feature list are further down this page. The API is on Render's free
+> tier and sleeps when idle, so the first request can take up to a minute.
+
 Fleet management REST API for Stark Group, **version 2.0.0 (Assignment 2, "Advanced Fleet Management")**.
 
 - **v1.0 (Assignment 1):** login with JWT, vehicle register (list / add / edit / delete) and duplicate vehicle
@@ -495,21 +510,19 @@ This is a short summary. Each decision, with the alternatives considered and its
 
 The repository contains a Render Blueprint (`render.yaml`) and a multi-stage `Dockerfile`.
 
-1. Push the repository to GitHub. In Render choose **New → Blueprint** and select the repository; it creates the
-   PostgreSQL database `stark-vms-db` and the Docker web service `stark-vms-backend` (health check
-   `/actuator/health`, `JWT_SECRET` generated). Without Blueprints: create a PostgreSQL instance, then a Web
-   Service with runtime *Docker* from this repository.
-2. **Convert the database URL.** Render shows a connection string like
-   `postgres://vms_user:PASSWORD@dpg-xxxx-a.singapore-postgres.render.com/vms_ab12`. Spring needs the JDBC form
-   without the credentials:
-   - `DB_URL` = `jdbc:postgresql://dpg-xxxx-a:5432/vms_ab12`
-     (the *internal* host `dpg-xxxx-a` when the service and the database are in the same region)
-   - `DB_USERNAME` and `DB_PASSWORD` are filled from the database by the Blueprint; leave them alone.
-   - **Take the database name from the dashboard, not from `render.yaml`.** Render appends a suffix to
-     `databaseName`, so `vms` becomes something like `vms_ab12`. Using the name from the Blueprint fails the
-     deploy with `FATAL: database "vms" does not exist`. Read the **Database** field under *Connections*.
-   - `DB_URL` is `sync: false`, so it cannot be filled in before the database exists. The first Blueprint deploy
-     therefore fails on purpose; set the real URL afterwards and redeploy.
+1. Create the database on **Neon** (free tier, does not expire; ADR 0018 D11): a project in the same region as
+   the Render service, no add-ons. Push the repository to GitHub, then in Render choose **New → Blueprint** and
+   select the repository; it creates the Docker web service `stark-vms-backend` (health check `/actuator/health`,
+   `JWT_SECRET` generated). Without Blueprints: create a Web Service with runtime *Docker* from this repository.
+2. **Convert the database URL.** In Neon open **Connect**, switch **Connection pooling off** (Flyway needs a
+   session-level connection, so use the direct host, not the `-pooler` one) and copy the string. It looks like
+   `postgresql://neondb_owner:PASSWORD@ep-xxxx.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require`.
+   Spring needs the JDBC form without the credentials:
+   - `DB_URL` = `jdbc:postgresql://ep-xxxx.ap-southeast-1.aws.neon.tech:5432/neondb?sslmode=require`
+   - `DB_USERNAME` = `neondb_owner`, `DB_PASSWORD` = the password from the string.
+   - All three are `sync: false` in `render.yaml`, so the Blueprint asks for them and never overwrites them.
+   - Render PostgreSQL works the same way, with two traps: Render appends a suffix to the database name, so read
+     it from the dashboard, and its free instance expires after about 30 days. ADR 0016 has the details.
 3. Set the remaining variables in the dashboard: `CORS_ALLOWED_ORIGINS=https://<your-site>.netlify.app (here: https://stark-vms-avishek.netlify.app)`,
    `APP_ADMIN_EMAIL`, `APP_ADMIN_PASSWORD` (and optionally the `APP_STAFF_*` values). If you do not use the
    Blueprint, also set `JWT_SECRET` (≥ 32 bytes). Do **not** set `SPRING_PROFILES_ACTIVE=local` in production.

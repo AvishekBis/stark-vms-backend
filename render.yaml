@@ -1,4 +1,6 @@
-# Render Blueprint: backend web service (Docker) + managed PostgreSQL.
+# Render Blueprint: backend web service (Docker). The database is Neon serverless PostgreSQL (ADR 0018,
+# ADR 0016): Render's free PostgreSQL expires after about 30 days, Neon's does not, and Neon resumes on the
+# first connection, so a link opened months later still works.
 # Secrets marked "sync: false" are entered in the Render dashboard, never committed.
 services:
   - type: web
@@ -10,18 +12,15 @@ services:
     healthCheckPath: /actuator/health
     autoDeploy: true
     envVars:
-      # Render's connectionString starts with postgres:// - Spring needs jdbc:postgresql://host:port/db.
-      # Set DB_URL by hand in the dashboard (see README "Deploy to Render"), user and password come from the DB.
+      # Neon gives postgresql://USER:PASSWORD@HOST/neondb?sslmode=require. Spring needs the JDBC form without
+      # the credentials: jdbc:postgresql://HOST:5432/neondb?sslmode=require, user and password separately.
+      # Use the DIRECT host (no "-pooler"): Flyway needs a session-level connection. See README "Deploy".
       - key: DB_URL
         sync: false
       - key: DB_USERNAME
-        fromDatabase:
-          name: stark-vms-db
-          property: user
+        sync: false
       - key: DB_PASSWORD
-        fromDatabase:
-          name: stark-vms-db
-          property: password
+        sync: false
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_EXPIRATION_MINUTES
@@ -50,9 +49,6 @@ services:
       - key: APP_STORAGE_KEY_PREFIX
         value: "prod/"
 
-databases:
-  - name: stark-vms-db
-    databaseName: vms
-    user: vms
-    plan: free
-    region: singapore
+# No `databases:` block any more. The v2.0 deployment used a Render PostgreSQL instance (stark-vms-db) until
+# 2026-11-10; it was replaced by Neon before Render's free database would have expired. Removing a resource
+# from a Blueprint does not delete it on Render; the old instance simply expires on its own.
