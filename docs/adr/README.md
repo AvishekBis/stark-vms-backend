@@ -24,6 +24,9 @@ format is Michael Nygard's, with the MADR sections "Alternatives considered" and
 > **ADRs 0022–0023 (v1.1 hardening) were written before implementation**, on 2026-11-07, and say
 > "Recorded: before implementation" in their header. They were **implemented on 2026-11-08**; each ADR ends with an
 > "Implementation" section that lists the files and tests (the decisions themselves are unchanged).
+>
+> **ADR 0025 (visual identity) was written after implementation**, on 2026-11-10, when the restyle was finished;
+> its header says so. It should have come first.
 
 The numbers match the ADRs of Assignment 2 (v2.0, `assignment 2/docs/adr/`), so the same decision has the same
 number in both folders. The gaps are deliberate. These decisions exist only in v2.0:
@@ -35,8 +38,8 @@ number in both folders. The gaps are deliberate. These decisions exist only in v
 - 0019 dashboard read model;
 - 0024 ADMIN user management (v2.1; v1.0 keeps the user-management gap described in its 0007).
 
-The ADRs 0001–0021 here describe only v1.0 code. 0022 and 0023 are the same decisions as in Assignment 2, adapted
-to v1.0 (0023 covers vehicles only).
+The ADRs 0001–0021 here describe only v1.0 code. 0022, 0023 and 0025 are the same decisions as in Assignment 2,
+adapted to v1.0 (0023 covers vehicles only; 0025 covers the v1 screens, with the same design files).
 
 ## Index
 
@@ -59,12 +62,15 @@ to v1.0 (0023 covers vehicles only).
 | [0021](0021-demo-data-seeded-into-the-real-database.md) | Demo data seeded into the real database (local profile only) | Accepted |
 | [0022](0022-login-throttling.md) | Login throttling: in-memory failure counters per e-mail and per IP, 429 with `Retry-After` | Accepted — **written before implementation** (v1.1), implemented 2026-11-08, **amended** after the security review of 2026-11-08 (client IP from the right-most proxy-added entry, attempts reserved before the password check, locks never evicted, log-safe keys) |
 | [0023](0023-optimistic-locking.md) | Optimistic locking: `version` on vehicles, required in `PUT /vehicles/{id}`, 409 `stale-version` | Accepted — **written before implementation** (v1.1), implemented 2026-11-08 |
+| [0025](0025-visual-identity-navy-and-gold.md) | Visual identity: navy and gold (one palette file, bundled Playfair Display for headings and figures, `AppDecorations` and `brand.dart`, gold never as text on a light surface) | Accepted — **written after implementation** (2026-11-10) |
 
 ## Reading order
 
 - **New to the code:** read 0002, then 0003, 0005 and 0004.
 - **Reviewing the duplicate rule:** read 0009, then 0008.
 - **Reviewing quality and risk:** read 0015.
+- **Reviewing the look and feel:** read 0025, then `../../stark-vms-frontend/lib/core/theme/` and
+  `../../stark-vms-frontend/lib/shared/widgets/brand.dart`.
 - **Reviewing the v1.1 hardening:** read 0022 (NFR-SEC-01) and 0023 (NFR-REL-01), then `../API_CONTRACT.md`
   Section 6.
 

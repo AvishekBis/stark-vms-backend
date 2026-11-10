@@ -13,7 +13,7 @@ edits (`version`, 409 `stale-version`, ADR 0023) — contract section 6.
 | [docs/ER_DIAGRAM.md](ER_DIAGRAM.md) | Database ER diagram (v1.1: `users`, `vehicles`, from migrations V1, V2 and V2_1) |
 | [docs/PERFORMANCE.md](PERFORMANCE.md) | NFR check: list endpoints with 1,000 vehicles, median / p95 via MockMvc and HTTP (all < 500 ms) |
 | [docs/test-reports/](test-reports/backend-summary.md) | Test evidence of the last run: backend tests per class + JaCoCo line coverage, `flutter test --reporter expanded` output |
-| [docs/adr/](adr/README.md) | Architecture Decision Records for v1.0 (contexts, data ownership, Riverpod, JWT, Problem Details, duplicate rule, NFRs, deployment) |
+| [docs/adr/](adr/README.md) | Architecture Decision Records for v1.0 (contexts, data ownership, Riverpod, JWT, Problem Details, duplicate rule, NFRs, deployment, the navy-and-gold visual identity) |
 
 ## Requirements covered
 | ID | Feature |
@@ -37,11 +37,14 @@ The architecture decisions of v1.0 are recorded as ADRs in [docs/adr/](adr/READM
 - pagination;
 - the injected clock;
 - the NFR strategy with its measured results and known gaps;
-- deployment.
+- deployment;
+- the visual identity: one palette file, a bundled serif, shared banner and card widgets, and the contrast rule for
+  gold (0025, the same design as Assignment 2).
 
 The ADRs 0001–0021 were written **after** the code, and each header says so. New decisions get an ADR before they
-are implemented: 0022 and 0023 (v1.1) were written on 2026-11-07 and implemented on 2026-11-08. The numbers match Assignment 2's ADRs. The gaps (0012–0014, 0017–0019) are decisions that exist
-only in v2.0.
+are implemented: 0022 and 0023 (v1.1) were written on 2026-11-07 and implemented on 2026-11-08. 0025 (visual
+identity) was written after the restyle, on 2026-11-10, and says so. The numbers match Assignment 2's ADRs. The gaps
+(0012–0014, 0017–0019, 0024) are decisions that exist only in Assignment 2.
 
 ## Run it locally (Windows)
 Tools used on this machine: JDK 21, Maven 3.9.9 and Flutter 3.47.7 in `C:\dev-tools`. In Git Bash:
@@ -59,7 +62,7 @@ flutter pub get
 flutter run -d chrome --web-port 5000 --dart-define=API_BASE_URL=http://localhost:8080/api/v1
 ```
 
-Demo accounts (local only, not real credentials):
+Demo accounts when running locally (the live site uses the same e-mails, see below):
 
 | Role | Email | Password |
 |---|---|---|
@@ -77,6 +80,32 @@ The browser end-to-end journey (`integration_test/app_journey_test.dart`, see th
 2026-11-08 in Chrome against `spring-boot:test-run`, including the vehicle edit that sends the loaded `version`.
 Performance (guideline 6, < 500 ms for 1,000 vehicles): measured results in [docs/PERFORMANCE.md](PERFORMANCE.md).
 
+## Live deployment
+| | URL |
+|---|---|
+| Frontend (Netlify) | <https://stark-vms-avishek.netlify.app> |
+| API (Render) | <https://stark-vms-backend-i2i2.onrender.com/api/v1> |
+| Swagger UI | <https://stark-vms-backend-i2i2.onrender.com/swagger-ui.html> |
+| Health | <https://stark-vms-backend-i2i2.onrender.com/actuator/health> |
+
+Demo accounts on the live site (throw-away credentials, not used anywhere else):
+
+| Role | Email | Password |
+|---|---|---|
+| ADMIN | admin@stark.local | `Wildstone99@b` |
+| STAFF | staff@stark.local | `Wildstone98@b` |
+
+**The free Render instance sleeps after a while, so the first request can take up to a minute.** The app shows a
+"Connecting to server…" message meanwhile. Open the site once before reviewing it.
+
+> The single Render service and Netlify site are shared with Assignment 2, so they now run **v2.0**, which keeps
+> every v1.0 feature working. Assignment 1 as submitted is the **v1.0.0** tag in both repositories
+> ([backend](https://github.com/AvishekBis/stark-vms-backend/tree/v1.0.0),
+> [frontend](https://github.com/AvishekBis/stark-vms-frontend/tree/v1.0.0)).
+>
+> Since 2026-11-10 the live database is Neon PostgreSQL rather than Render's free instance, which would expire
+> after about 30 days. The backend still runs on Render; Assignment 2's ADR 0018 (D11) records why.
+
 ## Deployment
 Backend → Render (Dockerfile + `render.yaml`), frontend → Netlify (`netlify.toml`, `web/_redirects`).
-Step-by-step instructions are in each project's README. Live URLs are placeholders until deployed.
+Step-by-step instructions are in each project's README.

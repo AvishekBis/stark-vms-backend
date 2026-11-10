@@ -104,6 +104,31 @@ Other requirements that shape the deployment:
 - Optionally deploy from CI.
 - Pin the database version.
 
+## Deployed (2026-11-09)
+
+Both assignments share one Render service and one Netlify site, because the free tiers allow only a small number
+of each and v2.x keeps every v1.0 feature working.
+
+| | URL |
+|---|---|
+| Frontend (Netlify) | <https://stark-vms-avishek.netlify.app> |
+| Backend (Render, Singapore, free) | <https://stark-vms-backend-i2i2.onrender.com> |
+| Database | Render PostgreSQL `stark-vms-db` (free) |
+
+What the first deployment taught us, now written into the backend README:
+
+- **Render renames the database.** `databaseName: vms` in `render.yaml` became `vms_vyqp`. `DB_URL` must use the
+  dashboard's *Database* value, or start-up fails with `FATAL: database "vms" does not exist`.
+- **The first Blueprint deploy always fails.** `DB_URL` is `sync: false` and the database host does not exist
+  until Render has created it, so the real URL can only be set on the second attempt.
+- **Netlify sites start private.** A new team's site answers 401 (`/edge-access`) to everyone who is not signed
+  in to Netlify. *Project configuration → General → Visitor access → Public* is required before review.
+- **The site name is part of the contract**: `CORS_ALLOWED_ORIGINS` has to match it exactly, so rename the
+  Netlify site before building the frontend against it.
+- The live deployment now runs **v2.0**; Assignment 1 as submitted is the `v1.0.0` tag in both repositories.
+  The shared database was created by v2.x, so `V2_1__add_vehicle_version.sql` is the same file in both versions
+  (see [0023](0023-optimistic-locking.md)).
+
 ## Related
 
 - Guideline: sections 6 (Portability), 13, 14.2, 18.1–18.4, 21.
