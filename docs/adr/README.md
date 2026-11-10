@@ -16,6 +16,9 @@ Michael Nygard format with the MADR sections "Alternatives considered" and "Rela
 > millisecond token cut-off, tokens revoked on disable via migration V8, wrong current passwords throttled). Their
 > "Files (planned)" lists are the intended change; the amendments name the real files and tests.
 >
+> **ADR 0025 (visual identity) was written after implementation**, on 2026-11-10, when the restyle was finished;
+> its header says so. It should have come first.
+>
 > **From now on, every significant decision gets an ADR *before* it is implemented.** Copy
 > [`template.md`](template.md), set `Status: Proposed`, open it with (or before) the pull request, and change it
 > to `Accepted` when the change is merged. "Significant" means: a new dependency or external service, a new
@@ -54,12 +57,15 @@ exist there with the v1.0 scope.
 | [0022](0022-login-throttling.md) | Login throttling: in-memory failure counters per e-mail and per IP, 429 with `Retry-After` | Accepted — **written before implementation** (v2.1), implemented 2026-11-08, **amended** after the security review | yes (same decision and amendment, v1.1) |
 | [0023](0023-optimistic-locking.md) | Optimistic locking: `version` on vehicles, drivers, maintenance records and users, required in every PUT, 409 `stale-version` | Accepted — **written before implementation** (v2.1), implemented 2026-11-08 | yes (vehicles only, v1.1) |
 | [0024](0024-admin-user-management.md) | ADMIN user management, own password change, tokens checked against the current user (supersedes 0017) | Accepted — **written before implementation** (v2.1), implemented 2026-11-08, **amended** after the security review | **new in v2.1** (not in v1.0) |
+| [0025](0025-visual-identity-navy-and-gold.md) | Visual identity: navy and gold (one palette file, bundled Playfair Display for headings and figures, `AppDecorations` and `brand.dart`, gold never as text on a light surface) | Accepted — **written after implementation** (2026-11-10) | yes (same decision, same design files) |
 
 ## Reading order
 
 - **New to the code:** 0002 → 0003 → 0005 → 0004.
 - **Reviewing a feature:** the feature's own ADR (0009, 0012, 0013, 0014, 0019), then 0008 and 0010.
 - **Reviewing quality and risk:** 0015 (every NFR with evidence and known gaps), then 0017 and 0018.
+- **Reviewing the look and feel:** 0025, then `../../stark-vms-frontend/lib/core/theme/` and
+  `../../stark-vms-frontend/lib/shared/widgets/brand.dart`.
 - **Reviewing the v2.1 hardening:** 0022 (NFR-SEC-01), 0023 (NFR-REL-01), 0024 (supersedes 0017) — including the
   "Amendment after the security review" sections of 0022 and 0024 — then `../API_CONTRACT.md` Section 7.
 
@@ -76,8 +82,8 @@ exist there with the v1.0 scope.
 ## Related documents
 
 - [`../API_CONTRACT.md`](../API_CONTRACT.md): the frontend/backend contract (Section 6 is v2.0, Section 7 is the
-  planned v2.1 hardening of 0022–0024).
-- [`../ER_DIAGRAM.md`](../ER_DIAGRAM.md): all tables of migrations V1–V6.
+  v2.1 hardening of 0022–0024, implemented).
+- [`../ER_DIAGRAM.md`](../ER_DIAGRAM.md): all tables of migrations V1–V8 (plus V2_1).
 - [`../PERFORMANCE.md`](../PERFORMANCE.md): measured performance (used by 0010, 0015, 0019).
 - [`../../stark-vms-backend/README.md`](../../README.md) and
   [`../../stark-vms-frontend/README.md`](https://github.com/AvishekBis/stark-vms-frontend/blob/main/README.md): "Decisions and trade-offs" summaries.

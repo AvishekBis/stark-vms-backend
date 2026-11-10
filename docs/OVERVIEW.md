@@ -14,7 +14,7 @@ fixes from the security review of 2026-11-08 (see below).
 | [docs/ER_DIAGRAM.md](ER_DIAGRAM.md) | Database ER diagram (v2.1: all tables of migrations V1–V8 and V2_1) |
 | [docs/PERFORMANCE.md](PERFORMANCE.md) | NFR check: vehicle / driver / document lists and dashboard with 1,000 vehicles, median / p95 via MockMvc and HTTP (all < 500 ms) |
 | [docs/test-reports/](test-reports/backend-summary.md) | Test evidence of the last run: backend tests per class + JaCoCo line coverage, `flutter test --reporter expanded` output |
-| [docs/adr/](adr/README.md) | Architecture Decision Records 0001–0024 (bounded contexts, data ownership, auth, storage, NFRs, deviations; 0022–0024 = v2.1 hardening) |
+| [docs/adr/](adr/README.md) | Architecture Decision Records 0001–0025 (bounded contexts, data ownership, auth, storage, NFRs, deviations; 0022–0024 = v2.1 hardening; 0025 = the navy-and-gold visual identity) |
 
 ## The ten Assignment 2 features
 | ID | Feature | Where in the app |
@@ -42,7 +42,19 @@ BR-10 — a vehicle or driver with history cannot be deleted (409, the app offer
 | Guideline 13 | Change own password (every role, the app logs in again automatically); disabling, demoting or resetting a user takes effect on their next request | User menu → Change password | [0024](adr/0024-admin-user-management.md) |
 | Security review 2026-11-08 | Client IP taken from the right-most proxy-added `X-Forwarded-For` entry (a client can no longer block someone else's IP), no throttle overshoot under parallel requests, locked e-mails never evicted, log-safe keys, millisecond token cut-off, tokens revoked on disable (migration V8), wrong current passwords throttled | Backend | Amendments in [0022](adr/0022-login-throttling.md), [0024](adr/0024-admin-user-management.md) |
 
-![Users list (ADMIN): search, role and status filters, sort, enabled badge, edit and reset-password actions](https://github.com/AvishekBis/stark-vms-frontend/blob/main/docs/screenshots/users_list.png)
+## Screenshots
+Taken by the browser end-to-end journey on 2026-11-10 against the local backend with its demo data, in the
+navy-and-gold design ([ADR 0025](adr/0025-visual-identity-navy-and-gold.md)).
+
+| Login | Dashboard |
+|---|---|
+| ![Login: the sign-in card with the demo account hint](https://github.com/AvishekBis/stark-vms-frontend/blob/main/docs/screenshots/login.png) | ![Dashboard: vehicle counts by status, documents expired and expiring, maintenance this month, drivers, and the expiring documents and licences lists](https://github.com/AvishekBis/stark-vms-frontend/blob/main/docs/screenshots/dashboard.png) |
+| **Vehicle list, filtered on the server** | **Documents tab with an expiry badge** |
+| ![Vehicle list filtered to Status: Active and Type: Car, with the driver column](https://github.com/AvishekBis/stark-vms-frontend/blob/main/docs/screenshots/vehicle_list_filters.png) | ![Documents tab: a Tax token with the "Expires today" badge](https://github.com/AvishekBis/stark-vms-frontend/blob/main/docs/screenshots/vehicle_documents.png) |
+| **Maintenance tab with total cost** | **Drivers list** |
+| ![Maintenance tab: total cost in BDT and the record count above the records](https://github.com/AvishekBis/stark-vms-frontend/blob/main/docs/screenshots/vehicle_maintenance.png) | ![Drivers list with licence expiry badges and current vehicle links](https://github.com/AvishekBis/stark-vms-frontend/blob/main/docs/screenshots/drivers_list.png) |
+| **Assign driver dialog** | **Users list (v2.1, ADMIN)** |
+| ![Assign driver dialog listing the available drivers](https://github.com/AvishekBis/stark-vms-frontend/blob/main/docs/screenshots/assign_driver.png) | ![Users list: search, role and status filters, sort, enabled badges, edit and reset-password actions](https://github.com/AvishekBis/stark-vms-frontend/blob/main/docs/screenshots/users_list.png) |
 
 ## Architecture decisions
 The architecture decisions are recorded as ADRs in [docs/adr/](adr/README.md):
@@ -53,11 +65,13 @@ The architecture decisions are recorded as ADRs in [docs/adr/](adr/README.md):
 - the NFR strategy with its measured results and known gaps;
 - user-management scope and accepted deviations from the guideline;
 - v2.1: login throttling (0022), optimistic locking (0023) and ADMIN user management (0024), each with an
-  amendment after the security review of 2026-11-08.
+  amendment after the security review of 2026-11-08;
+- the visual identity: one palette file, a bundled serif, shared banner and card widgets, and the contrast rule for
+  gold (0025).
 
 They were written **after** the code and say so in each header. New decisions get an ADR before they are
-implemented. ADRs 0012–0014 and 0017–0019 are new in v2.0; ADRs 0022–0024 were written before the v2.1 code; the
-others line up with Assignment 1's ADRs.
+implemented. ADRs 0012–0014 and 0017–0019 are new in v2.0; ADRs 0022–0024 were written before the v2.1 code;
+ADR 0025 was written after the restyle and says so. The others line up with Assignment 1's ADRs.
 
 ## Run it locally (Windows)
 Tools used on this machine: JDK 21, Maven 3.9.9 and Flutter 3.47.7 in `C:\dev-tools`. In Git Bash:
@@ -85,13 +99,15 @@ Demo accounts when running locally (the live site uses the same e-mails, see bel
 ## Tests
 ```bash
 cd stark-vms-backend  && ./mvnw verify                      # 366 tests incl. all v1 / v2.0 tests and performance, real embedded PostgreSQL
-cd stark-vms-frontend && flutter analyze && flutter test    # 0 issues, 315 tests incl. all v1 and v2.0 tests (v2.1)
+cd stark-vms-frontend && flutter analyze && flutter test    # 0 issues, 318 tests incl. all v1 and v2.0 tests (v2.1 + restyle)
 ```
 The browser end-to-end journey (`integration_test/app_journey_test.dart`) is described in the frontend README. Last
 run 2026-11-08 in Chrome against `spring-boot:test-run`: passed (v1 vehicle journey with the `version` round-trip on
-edit, v2.0 document / dashboard journey, v2.1 Users: add a STAFF user, find it, disable it with confirmation).
+edit, v2.0 document / dashboard journey, v2.1 Users: add a STAFF user, find it, disable it with confirmation). It ran
+again on 2026-11-10, after the restyle, to retake the screenshots above.
 Test evidence of the last run (guideline 22): [docs/test-reports/backend-summary.md](test-reports/backend-summary.md)
-(tests per class, line coverage per service) and [docs/test-reports/frontend-test-report.txt](https://github.com/AvishekBis/stark-vms-frontend/blob/main/docs/test-reports/frontend-test-report.txt).
+(tests per class, line coverage per service) and [docs/test-reports/frontend-test-report.txt](https://github.com/AvishekBis/stark-vms-frontend/blob/main/docs/test-reports/frontend-test-report.txt)
+(the v2.1 run of 2026-11-08, 315 tests; the 3 tests added since are in `test/unit/app_config_test.dart`).
 Performance (guideline 6, < 500 ms for 1,000 vehicles): measured results in [docs/PERFORMANCE.md](PERFORMANCE.md).
 
 ## Live deployment
@@ -118,6 +134,10 @@ the API answers 403.
 The live database holds the same fleet as the local demo data, entered through the API as the ADMIN user: 26
 vehicles, 12 drivers, 9 current assignments, 20 documents (3 expired, 5 expiring soon) and 30 maintenance records.
 The automatic seeder stays off in production ([ADR 0021](adr/0021-demo-data-seeded-into-the-real-database.md)).
+
+The live database is **Neon** PostgreSQL (Singapore), not Render's: Render's free database expires after about 30
+days, Neon's does not and wakes itself on the first request. The backend still runs on Render. This deviation from
+guideline section 11 is recorded as D11 in [ADR 0018](adr/0018-accepted-deviations-from-the-guideline.md).
 
 ## Deployment
 Backend → Render (Dockerfile + `render.yaml`; documents are stored in PostgreSQL by default so they survive

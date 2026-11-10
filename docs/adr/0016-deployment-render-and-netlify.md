@@ -117,7 +117,7 @@ of each and v2.x keeps every v1.0 feature working.
 |---|---|
 | Frontend (Netlify) | <https://stark-vms-avishek.netlify.app> |
 | Backend (Render, Singapore, free) | <https://stark-vms-backend-i2i2.onrender.com> |
-| Database | Render PostgreSQL `stark-vms-db` (free) |
+| Database | Neon PostgreSQL 18, project `stark-vms`, AWS Singapore (free); Render PostgreSQL until 2026-11-10 |
 
 What the first deployment taught us, now written into the backend README:
 
@@ -132,6 +132,27 @@ What the first deployment taught us, now written into the backend README:
 - **Demo data on the live site was entered through the API as the ADMIN user**, not by the seeder:
   `app.seed-demo-data` stays `false` in production, as [0021](0021-demo-data-seeded-into-the-real-database.md)
   requires. 26 vehicles, 12 drivers, 9 assignments, 20 documents and 30 maintenance records.
+
+## Database moved to Neon (2026-11-10)
+
+The first deployment used Render's free PostgreSQL. It expires about 30 days after it is created, which falls after
+the submission deadline but before the review is guaranteed to be over, and long before the live link stops being
+useful. The database was therefore moved to Neon, whose free tier does not expire and resumes on the first
+connection. The backend stays on Render; only `DB_URL`, `DB_USERNAME` and `DB_PASSWORD` changed, and
+`render.yaml` no longer declares a database. The deviation from section 11 is recorded as D11 in
+[0018](0018-accepted-deviations-from-the-guideline.md).
+
+What the switch taught us:
+
+- **Use Neon's direct host, not the `-pooler` one.** Flyway takes a session-level advisory lock, which a
+  transaction-mode pooler cannot hold.
+- **`sslmode=require` is enough.** Neon's connection string also carries `channel_binding=require`; the JDBC URL
+  drops it, and pgJDBC still negotiates SCRAM.
+- **A Blueprint that names a database rewrites its credentials.** With `DB_USERNAME` / `DB_PASSWORD` still
+  `fromDatabase`, the next Blueprint sync would have pointed the service back at the old Render instance, so both
+  became `sync: false`.
+- **A fresh database means fresh data.** Flyway rebuilt the schema from V1–V8 on the first start, the bootstrap
+  accounts came from the same environment variables, and the demo fleet was entered again through the API.
 
 ## Related
 

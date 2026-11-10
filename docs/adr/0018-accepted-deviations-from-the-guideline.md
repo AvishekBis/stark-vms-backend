@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-11-07
+- **Amended:** 2026-11-10 (D11, production database moved to Neon)
 - **Recorded:** retroactively, after implementation (each deviation was introduced when the feature named in its
   row was built in v1.0 or v2.0; the BR-09 DTO check was added on 2026-11-07)
 
@@ -143,6 +144,26 @@ The following deviations are accepted. Each one names the guideline text, what t
 - **Why:** the journey needs a running backend with a database and a matching ChromeDriver. That is a heavier CI
   setup than the course needs. See [0020](0020-test-strategy-and-ci.md).
 
+### D11. The production database is Neon, not Render PostgreSQL
+
+- **Guideline** section 11 names "Render (backend + DB)" as the deployment target, and section 18.3 starts with
+  "Create a PostgreSQL instance on Render".
+- **Code:** unchanged. The backend still runs on Render as a Docker web service; only `DB_URL`, `DB_USERNAME`
+  and `DB_PASSWORD` point at a Neon project (`stark-vms`, PostgreSQL 18, AWS Singapore, the same region as the
+  Render service). `render.yaml` no longer declares a database and takes all three values as `sync: false`.
+- **Why:** Render's free PostgreSQL expires about 30 days after it is created. The submission is reviewed after
+  the deadline, and the live link is meant to keep working afterwards, so a database that disappears in early
+  December would leave a site that loads but cannot sign anyone in. Neon's free tier does not expire, and its
+  compute resumes on the first connection after going idle, so nobody has to wake it by hand. Supabase was
+  considered and rejected for the same reason: its free projects pause after a week without activity and must be
+  restored from the dashboard.
+- **What stayed the same:** it is still PostgreSQL in every environment (section 8, ADR
+  [0006](0006-postgresql-everywhere-flyway-and-validate.md)); Flyway created the whole schema on Neon from V1–V8
+  on the first start; the partial unique indexes behave identically; no code, migration or test changed.
+- **Moved on 2026-11-10:** the Render service was switched to Neon and the demo fleet was entered again through
+  the API as the ADMIN user (ADR [0021](0021-demo-data-seeded-into-the-real-database.md)). Checked afterwards:
+  health UP, both demo logins, 26 vehicles, the dashboard figures, and a document download.
+
 ## Alternatives considered
 
 | Alternative | Why rejected |
@@ -166,11 +187,12 @@ The following deviations are accepted. Each one names the guideline text, what t
 - D2: if a vehicle's documents ever exceed a few dozen, page the endpoint in a new API version, or add a
   `current` filter that shows the newest document per type.
 - D3, D5, D9, D10: see 0013, 0017, 0015 and 0020.
+- D11: see [0016](0016-deployment-render-and-netlify.md), section "Database moved to Neon".
 - A new deviation gets a row here, through a new ADR before implementation ([0001](0001-record-architecture-decisions.md)).
 
 ## Related
 
-- Guideline: sections 4, 6, 8, 10.1, 10.3, 11.1, 11.3, 12 (BR-08, BR-09), 15, 18.1, 18.2, 21.
+- Guideline: sections 4, 6, 8, 10.1, 10.3, 11, 11.1, 11.3, 12 (BR-08, BR-09), 15, 18.1, 18.2, 18.3, 21.
 - ADRs: [0006](0006-postgresql-everywhere-flyway-and-validate.md), [0009](0009-vehicle-number-normalization-and-duplicate-check.md),
   [0011](0011-time-and-expiry-with-injected-clock.md), [0013](0013-document-file-storage-behind-storageservice.md),
   [0015](0015-non-functional-requirements-strategy.md), [0017](0017-user-account-management-scope.md),

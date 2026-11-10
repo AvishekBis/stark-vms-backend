@@ -69,7 +69,9 @@ describes the two CI workflows. Tests are "part of done".
     [0018](0018-accepted-deviations-from-the-guideline.md), D10).
 - **Static checks:** `flutter_lints` 6.0.0 (`analysis_options.yaml`), `flutter analyze` with 0 issues,
   `dart format --set-exit-if-changed`.
-- **Count:** 243 tests at v2.0; 315 at v2.1 (`stark-vms-frontend/README.md`, Tests).
+- **Count:** 243 tests at v2.0; 315 at v2.1; 318 after the navy-and-gold restyle of
+  [0025](0025-visual-identity-navy-and-gold.md), which changed no test and added 3 for the login demo hint
+  (`test/unit/app_config_test.dart`) (`stark-vms-frontend/README.md`, Tests).
 - **Saved evidence:** `docs/test-reports/backend-summary.md` and `docs/test-reports/frontend-test-report.txt`
   (guideline 22).
 
